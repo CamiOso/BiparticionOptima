@@ -1,5 +1,6 @@
 import numpy as np
 
+from src.funcs.force import biparticiones
 from src.funcs.iit import seleccionar_emd
 from src.middlewares.profile import gestor_perfilado, profile
 from src.middlewares.slogger import SafeLogger
@@ -30,9 +31,25 @@ class BruteForce(SIA):
         assert self.sia_dists_marginales is not None
         dist_subsistema = self.sia_dists_marginales
 
-        # Placeholder temporal: hasta implementar biparticiones reales,
-        # usamos una permutacion simple para simular una distribucion particionada.
-        dist_particion = np.roll(dist_subsistema, 1)
+        # Version didactica inicial: tomamos la primera biparticion no trivial
+        # y construimos una distribucion candidata en funcion de sus indices.
+        assert self.sia_subsistema is not None
+        alcance_indices = self.sia_subsistema.indices_ncubos
+        mecanismo_indices = self.sia_subsistema.dims_ncubos
+
+        try:
+            subalcance, submecanismo = next(
+                biparticiones(alcance_indices, mecanismo_indices)
+            )
+        except StopIteration:
+            subalcance, submecanismo = (), ()
+
+        factor = len(subalcance) + len(submecanismo)
+        if factor == 0:
+            dist_particion = dist_subsistema.copy()
+        else:
+            dist_particion = np.roll(dist_subsistema, factor % dist_subsistema.size)
+
         perdida = self.distancia_metrica(dist_subsistema, dist_particion)
         self.logger.debug(f"Perdida calculada: {perdida:.4f}")
 
