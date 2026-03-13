@@ -1,0 +1,2 @@
+# Dependencias de ejecucion del proyecto.
+# Se iran agregando a medida que implementemos modulos.
