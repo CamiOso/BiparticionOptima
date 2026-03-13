@@ -58,7 +58,7 @@ def profile(name: Optional[str] = None) -> Callable:
 
                 html_path = gestor_perfilado.get_output_path(profile_name, "html")
                 html_path.write_text(
-                    profiler.output(renderer=HTMLRenderer(show_all=True, timeline=True)),
+                    profiler.output(renderer=HTMLRenderer()),
                     encoding="utf-8",
                 )
                 return result
