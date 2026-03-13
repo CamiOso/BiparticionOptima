@@ -2,6 +2,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from src.funcs.format import fmt_solution_block
+
 
 @dataclass
 class Solution:
@@ -14,10 +16,10 @@ class Solution:
     estado_inicial: str
 
     def __str__(self) -> str:
-        return (
-            f"Estrategia: {self.estrategia}\n"
-            f"Estado inicial: {self.estado_inicial}\n"
-            f"Perdida: {self.perdida:.4f}\n"
-            f"Dist. subsistema: {self.distribucion_subsistema.tolist()}\n"
-            f"Dist. particion: {self.distribucion_particion.tolist()}"
+        return fmt_solution_block(
+            estrategia=self.estrategia,
+            estado_inicial=self.estado_inicial,
+            perdida=self.perdida,
+            distribucion_subsistema=self.distribucion_subsistema,
+            distribucion_particion=self.distribucion_particion,
         )
