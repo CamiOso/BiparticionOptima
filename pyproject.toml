@@ -1,0 +1,8 @@
+[project]
+name = "biparticion-optima"
+version = "0.1.0"
+description = "Proyecto de analisis para encontrar biparticion optima en sistemas discretos"
+readme = "README.md"
+requires-python = ">=3.11"
+
+dependencies = []
