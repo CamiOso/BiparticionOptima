@@ -1,5 +1,7 @@
 import numpy as np
 
+from src.modelos.base.aplicacion import aplicacion
+from src.modelos.enumeraciones.emd_temporal import TimeEMD
 from src.modelos.nucleo.solucion import Solucion
 from src.estrategias.phi import Phi
 
@@ -56,3 +58,19 @@ def test_phi_aplica_filtros_de_subsistema() -> None:
 
     assert isinstance(result, Solucion)
     assert result.distribucion_subsistema.size > 0
+
+
+def test_phi_funciona_en_modo_causa() -> None:
+    aplicacion.set_tiempo_emd(TimeEMD.EMD_CAUSA)
+    strategy = Phi(_sample_tpm_4nodes())
+
+    result = strategy.aplicar_estrategia(
+        estado_inicial="1000",
+        condicion="1111",
+        alcance="1111",
+        mecanismo="1111",
+    )
+
+    assert isinstance(result, Solucion)
+    assert result.distribucion_subsistema.size > 0
+    aplicacion.set_tiempo_emd(TimeEMD.EMD_EFECTO)

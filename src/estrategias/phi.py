@@ -1,8 +1,13 @@
+import collections
+import collections.abc
+
 import numpy as np
 
 from src.funciones.formato import fmt_biparticion
-from src.funciones.iit import seleccionar_emd
+from src.funciones.iit import reindexar, seleccionar_emd
+from src.modelos.base.aplicacion import aplicacion
 from src.modelos.base.sia import SIA
+from src.modelos.enumeraciones.emd_temporal import TimeEMD
 from src.modelos.nucleo.solucion import Solucion
 
 
@@ -41,6 +46,7 @@ class Phi(SIA):
         mecanismo: str,
     ) -> Solucion | None:
         try:
+            self._aplicar_compatibilidad_pyphi()
             from pyphi import Network, Subsystem
         except Exception:
             return None
@@ -64,16 +70,21 @@ class Phi(SIA):
         if not mecanismo_pyphi or not alcance_pyphi:
             return None
 
-        red = Network(self.tpm, node_labels=tuple(range(total_nodos)))
-        subsistema = Subsystem(red, state=estado, nodes=nodos_candidatos)
-        mip = subsistema.effect_mip(mecanismo_pyphi, alcance_pyphi)
+        try:
+            red = Network(self.tpm, node_labels=tuple(range(total_nodos)))
+            subsistema = Subsystem(red, state=estado, nodes=nodos_candidatos)
+            mip = self._resolver_mip_pyphi(
+                subsistema,
+                mecanismo_pyphi,
+                alcance_pyphi,
+            )
+        except Exception:
+            return None
         if mip is None:
             return None
 
-        distribucion_subsistema = np.array(mip.repertoire.flatten(), dtype=np.float32)
-        distribucion_particion = np.array(
-            mip.partitioned_repertoire.flatten(), dtype=np.float32
-        )
+        distribucion_subsistema = self._extraer_repertorio(mip.repertoire)
+        distribucion_particion = self._extraer_repertorio(mip.partitioned_repertoire)
 
         particion = "NO-PARTITION"
         if mip.partition is not None:
@@ -95,6 +106,34 @@ class Phi(SIA):
             estado_inicial=estado_inicial,
             particion=particion,
         )
+
+    def _resolver_mip_pyphi(self, subsistema, mecanismo_pyphi, alcance_pyphi):
+        if aplicacion.tiempo_emd == TimeEMD.EMD_CAUSA.value:
+            return subsistema.cause_mip(mecanismo_pyphi, alcance_pyphi)
+        if aplicacion.tiempo_emd == TimeEMD.EMD_INTEGRADA.value:
+            mip_efecto = subsistema.effect_mip(mecanismo_pyphi, alcance_pyphi)
+            mip_causa = subsistema.cause_mip(mecanismo_pyphi, alcance_pyphi)
+            if mip_efecto is None:
+                return mip_causa
+            if mip_causa is None:
+                return mip_efecto
+            return mip_efecto if mip_efecto.phi >= mip_causa.phi else mip_causa
+        return subsistema.effect_mip(mecanismo_pyphi, alcance_pyphi)
+
+    def _extraer_repertorio(self, repertorio) -> np.ndarray:
+        if repertorio is None:
+            return np.array([], dtype=np.float32)
+        vector = np.array(repertorio.flatten(), dtype=np.float32)
+        if vector.size <= 1:
+            return vector
+        estados = int(np.log2(vector.size))
+        indices = reindexar(estados)
+        return vector[indices]
+
+    def _aplicar_compatibilidad_pyphi(self) -> None:
+        for nombre in ("Iterable", "Mapping", "MutableMapping", "Sequence"):
+            if not hasattr(collections, nombre):
+                setattr(collections, nombre, getattr(collections.abc, nombre))
 
     def _resolver_heuristico(self, estado_inicial: str) -> Solucion:
         assert self.sia_dists_marginales is not None
