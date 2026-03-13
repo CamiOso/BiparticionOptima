@@ -1,7 +1,7 @@
 import numpy as np
 
-from src.models.core.solution import Solution
-from src.strategies.q_nodes import QNodes
+from src.modelos.nucleo.solucion import Solution
+from src.estrategias.q_nodos import QNodes
 
 
 def _sample_tpm_4nodes() -> np.ndarray:

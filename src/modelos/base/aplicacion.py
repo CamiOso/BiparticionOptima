@@ -1,8 +1,8 @@
 """Configuracion global de la aplicacion."""
 
-from src.models.enums.distance import MetricDistance
-from src.models.enums.notation import Notation
-from src.models.enums.temporal_emd import TimeEMD
+from src.modelos.enumeraciones.distancia import MetricDistance
+from src.modelos.enumeraciones.notacion import Notation
+from src.modelos.enumeraciones.emd_temporal import TimeEMD
 
 
 class Application:

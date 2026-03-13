@@ -3,8 +3,8 @@ from pathlib import Path
 
 import numpy as np
 
-from src.constants.base import CSV_DELIMITER
-from src.models.base.application import aplicacion
+from src.constantes.base import CSV_DELIMITER
+from src.modelos.base.aplicacion import aplicacion
 
 
 @dataclass

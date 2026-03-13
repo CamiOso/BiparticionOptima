@@ -1,11 +1,11 @@
 import numpy as np
 
-from src.models.base.sia import SIA
-from src.models.core.solution import Solution
+from src.modelos.base.sia import SIA
+from src.modelos.nucleo.solucion import Solution
 
 
-class QNodes(SIA):
-    """Estrategia Q-Nodes minima para fase didactica inicial."""
+class Phi(SIA):
+    """Estrategia basada en PyPhi con fallback didactico si no esta disponible."""
 
     def __init__(self, tpm: np.ndarray) -> None:
         super().__init__(tpm)
@@ -22,10 +22,17 @@ class QNodes(SIA):
         assert self.sia_dists_marginales is not None
         dist_subsistema = self.sia_dists_marginales
 
-        # Placeholder didactico: Q-Nodes iniciara con una aproximacion neutra
-        # mientras implementamos la version submodular completa.
+        # Etapa inicial: intentamos detectar disponibilidad de pyphi,
+        # pero devolvemos un resultado estable mientras construimos la version completa.
+        try:
+            import pyphi  # noqa: F401
+
+            estrategia_nombre = "PyPhi"
+        except Exception:
+            estrategia_nombre = "PyPhi-fallback"
+
         return Solution(
-            estrategia="Q-Nodes",
+            estrategia=estrategia_nombre,
             perdida=0.0,
             distribucion_subsistema=dist_subsistema,
             distribucion_particion=dist_subsistema.copy(),

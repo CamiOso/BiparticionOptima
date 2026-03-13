@@ -1,17 +1,17 @@
-from src.constants.base import PROJECT_NAME, PROJECT_VERSION
-from src.constants.error import ERROR_EMPTY_INPUT, ERROR_INVALID_BITSTRING
-from src.constants.models import BRUTEFORCE_LABEL
-from src.controllers.manager import Manager
-from src.models.base.application import aplicacion
-from src.models.core.ncube import NCube
-from src.models.core.system import System
-from src.models.enums.distance import MetricDistance
-from src.models.enums.notation import Notation
-from src.models.enums.temporal_emd import TimeEMD
-from src.middlewares.slogger import SafeLogger
-from src.strategies.force import BruteForce
-from src.strategies.phi import Phi
-from src.strategies.q_nodes import QNodes
+from src.constantes.base import PROJECT_NAME, PROJECT_VERSION
+from src.constantes.error import ERROR_EMPTY_INPUT, ERROR_INVALID_BITSTRING
+from src.constantes.models import BRUTEFORCE_LABEL
+from src.controladores.gestor import Manager
+from src.modelos.base.aplicacion import aplicacion
+from src.modelos.nucleo.ncubo import NCube
+from src.modelos.nucleo.sistema import System
+from src.modelos.enumeraciones.distancia import MetricDistance
+from src.modelos.enumeraciones.notacion import Notation
+from src.modelos.enumeraciones.emd_temporal import TimeEMD
+from src.intermedios.registro import SafeLogger
+from src.estrategias.fuerza_bruta import BruteForce
+from src.estrategias.phi import Phi
+from src.estrategias.q_nodos import QNodes
 import numpy as np
 
 

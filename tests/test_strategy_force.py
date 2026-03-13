@@ -1,8 +1,8 @@
 import numpy as np
 
-from src.models.base.application import aplicacion
-from src.models.core.solution import Solution
-from src.strategies.force import BruteForce
+from src.modelos.base.aplicacion import aplicacion
+from src.modelos.nucleo.solucion import Solution
+from src.estrategias.fuerza_bruta import BruteForce
 
 
 def _sample_tpm_4nodes() -> np.ndarray:

@@ -1,6 +1,6 @@
 import numpy as np
 
-from src.models.core.system import System
+from src.modelos.nucleo.sistema import System
 
 
 def _sample_tpm_4nodes() -> np.ndarray:

@@ -2,7 +2,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from src.funcs.format import fmt_solution_block
+from src.funciones.formato import fmt_solution_block
 
 
 @dataclass

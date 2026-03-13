@@ -1,7 +1,7 @@
 import numpy as np
 from numpy.typing import NDArray
 
-from src.models.core.ncube import NCube
+from src.modelos.nucleo.ncubo import NCube
 
 
 class System:

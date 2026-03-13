@@ -1,6 +1,6 @@
 import numpy as np
 
-from src.funcs.force import biparticiones
+from src.funciones.particiones import biparticiones
 
 
 def test_biparticiones_not_empty_and_omits_empty_empty() -> None:

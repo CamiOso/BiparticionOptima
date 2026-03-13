@@ -3,8 +3,8 @@ from typing import Callable
 import numpy as np
 from numpy.typing import NDArray
 
-from src.models.base.application import aplicacion
-from src.models.enums.temporal_emd import TimeEMD
+from src.modelos.base.aplicacion import aplicacion
+from src.modelos.enumeraciones.emd_temporal import TimeEMD
 
 
 def emd_efecto(u: NDArray[np.float32], v: NDArray[np.float32]) -> float:

@@ -1,6 +1,6 @@
 import numpy as np
 
-from src.funcs.iit import emd_efecto
+from src.funciones.iit import emd_efecto
 
 
 def test_emd_efecto_zero_when_equal() -> None:

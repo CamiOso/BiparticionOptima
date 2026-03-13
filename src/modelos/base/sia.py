@@ -3,8 +3,8 @@ from abc import ABC, abstractmethod
 import numpy as np
 from numpy.typing import NDArray
 
-from src.constants.error import ERROR_INVALID_BITSTRING
-from src.models.core.system import System
+from src.constantes.error import ERROR_INVALID_BITSTRING
+from src.modelos.nucleo.sistema import System
 
 
 class SIA(ABC):

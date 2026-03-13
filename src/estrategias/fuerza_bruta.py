@@ -1,12 +1,12 @@
 import numpy as np
 
-from src.funcs.force import biparticiones
-from src.funcs.format import fmt_biparticion
-from src.funcs.iit import seleccionar_emd
-from src.middlewares.profile import gestor_perfilado, profile
-from src.middlewares.slogger import SafeLogger
-from src.models.base.sia import SIA
-from src.models.core.solution import Solution
+from src.funciones.particiones import biparticiones
+from src.funciones.formato import fmt_biparticion
+from src.funciones.iit import seleccionar_emd
+from src.intermedios.perfil import gestor_perfilado, profile
+from src.intermedios.registro import SafeLogger
+from src.modelos.base.sia import SIA
+from src.modelos.nucleo.solucion import Solution
 
 
 class BruteForce(SIA):

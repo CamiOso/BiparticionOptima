@@ -1,7 +1,7 @@
 import numpy as np
 
-from src.models.core.solution import Solution
-from src.strategies.phi import Phi
+from src.modelos.nucleo.solucion import Solution
+from src.estrategias.phi import Phi
 
 
 def _sample_tpm_4nodes() -> np.ndarray:
