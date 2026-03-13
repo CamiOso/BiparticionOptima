@@ -10,6 +10,7 @@ from src.models.enums.notation import Notation
 from src.models.enums.temporal_emd import TimeEMD
 from src.middlewares.slogger import SafeLogger
 from src.strategies.force import BruteForce
+from src.strategies.phi import Phi
 import numpy as np
 
 
@@ -69,6 +70,15 @@ def iniciar() -> None:
         f"subsistema={resultado.distribucion_subsistema.tolist()} vs "
         f"particion={resultado.distribucion_particion.tolist()}"
     )
+
+    estrategia_phi = Phi(tpm)
+    resultado_phi = estrategia_phi.aplicar_estrategia(
+        estado_inicial=estado_inicial,
+        condicion="1111",
+        alcance="1111",
+        mecanismo="1111",
+    )
+    print(f"Phi demo ->\n{resultado_phi}")
 
     demo_cube = NCube(
         indice=0,
