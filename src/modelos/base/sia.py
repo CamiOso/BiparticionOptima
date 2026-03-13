@@ -32,13 +32,13 @@ class SIA(ABC):
         alcance: str,
         mecanismo: str,
     ) -> None:
-        expected = self.tpm.shape[1]
-        for value in (estado_inicial, condicion, alcance, mecanismo):
-            if len(value) != expected:
+        esperado = self.tpm.shape[1]
+        for valor in (estado_inicial, condicion, alcance, mecanismo):
+            if len(valor) != esperado:
                 raise ValueError(
-                    f"Longitud invalida: se esperaba {expected} y llego {len(value)}."
+                    f"Longitud invalida: se esperaba {esperado} y llego {len(valor)}."
                 )
-            if any(char not in {"0", "1"} for char in value):
+            if any(char not in {"0", "1"} for char in valor):
                 raise ValueError(ERROR_INVALID_BITSTRING)
 
     def sia_preparar_subsistema(
@@ -52,7 +52,7 @@ class SIA(ABC):
         self.chequear_parametros(estado_inicial, condicion, alcance, mecanismo)
 
         estado_vec = np.array([int(bit) for bit in estado_inicial], dtype=np.int8)
-        system = Sistema(self.tpm, estado_vec)
+        sistema = Sistema(self.tpm, estado_vec)
 
-        self.sia_subsistema = system
-        self.sia_dists_marginales = system.distribucion_marginal()
+        self.sia_subsistema = sistema
+        self.sia_dists_marginales = sistema.distribucion_marginal()

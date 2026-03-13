@@ -15,20 +15,20 @@ class Sistema:
     def _from_cubes(
         cls,
         estado_inicio: NDArray[np.int8],
-        cubes: tuple[NCube, ...],
+        cubos: tuple[NCube, ...],
     ) -> "Sistema":
-        inst = cls.__new__(cls)
-        inst.estado_inicial = estado_inicio
-        inst.ncubos = cubes
-        return inst
+        instancia = cls.__new__(cls)
+        instancia.estado_inicial = estado_inicio
+        instancia.ncubos = cubos
+        return instancia
 
     def _crear_ncubos(self, tpm: np.ndarray) -> tuple[NCube, ...]:
         num_nodos = tpm.shape[1]
-        expected_rows = 1 << num_nodos
-        if tpm.shape[0] != expected_rows:
+        filas_esperadas = 1 << num_nodos
+        if tpm.shape[0] != filas_esperadas:
             raise ValueError(
                 "TPM invalida: se esperaban "
-                f"{expected_rows} filas para {num_nodos} nodos y llegaron {tpm.shape[0]}."
+                f"{filas_esperadas} filas para {num_nodos} nodos y llegaron {tpm.shape[0]}."
             )
 
         return tuple(
@@ -42,7 +42,7 @@ class Sistema:
 
     @property
     def indices_ncubos(self) -> NDArray[np.int8]:
-        return np.array([cube.indice for cube in self.ncubos], dtype=np.int8)
+        return np.array([cubo.indice for cubo in self.ncubos], dtype=np.int8)
 
     @property
     def dims_ncubos(self) -> NDArray[np.int8]:
@@ -52,16 +52,16 @@ class Sistema:
 
     def condicionar(self, indices: NDArray[np.int8]) -> "Sistema":
         """Aplica condiciones de fondo y elimina n-cubos de esos indices."""
-        indices_validos = np.intersect1d(self.indices_ncubos, indices)
-        if not indices_validos.size:
+        indices_en_sistema = np.intersect1d(self.indices_ncubos, indices)
+        if not indices_en_sistema.size:
             return self
 
-        nuevos = tuple(
-            cube.condicionar(indices_validos, self.estado_inicial)
-            for cube in self.ncubos
-            if cube.indice not in indices_validos
+        nuevos_cubos = tuple(
+            cubo.condicionar(indices_en_sistema, self.estado_inicial)
+            for cubo in self.ncubos
+            if cubo.indice not in indices_en_sistema
         )
-        return Sistema._from_cubes(self.estado_inicial, nuevos)
+        return Sistema._from_cubes(self.estado_inicial, nuevos_cubos)
 
     def substraer(
         self,
@@ -70,12 +70,12 @@ class Sistema:
     ) -> "Sistema":
         """Remueve futuros (indices de n-cubo) y marginaliza dimensiones de mecanismo."""
         alcance_set = {int(v) for v in alcance_idx.tolist()}
-        nuevos = tuple(
-            cube.marginalizar(mecanismo_dims)
-            for cube in self.ncubos
-            if cube.indice not in alcance_set
+        nuevos_cubos = tuple(
+            cubo.marginalizar(mecanismo_dims)
+            for cubo in self.ncubos
+            if cubo.indice not in alcance_set
         )
-        return Sistema._from_cubes(self.estado_inicial, nuevos)
+        return Sistema._from_cubes(self.estado_inicial, nuevos_cubos)
 
     def bipartir(
         self,
@@ -92,14 +92,14 @@ class Sistema:
         if not self.ncubos:
             return np.array([], dtype=np.float32)
 
-        probs = []
-        for cube in self.ncubos:
-            seleccion = [slice(None)] * cube.dims.size
-            for local_idx, dim in enumerate(cube.dims):
-                posicion_local = cube.dims.size - (local_idx + 1)
+        probabilidades = []
+        for cubo in self.ncubos:
+            seleccion = [slice(None)] * cubo.dims.size
+            for indice_local, dim in enumerate(cubo.dims):
+                posicion_local = cubo.dims.size - (indice_local + 1)
                 seleccion[posicion_local] = int(self.estado_inicial[int(dim)])
-            probs.append(float(cube.data[tuple(seleccion)]))
-        return np.array(probs, dtype=np.float32)
+            probabilidades.append(float(cubo.data[tuple(seleccion)]))
+        return np.array(probabilidades, dtype=np.float32)
 
 
 # Alias retrocompatible.

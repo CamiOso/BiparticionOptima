@@ -30,19 +30,19 @@ def _sample_tpm_4nodes() -> np.ndarray:
 def test_system_distribucion_marginal_shape() -> None:
     tpm = _sample_tpm_4nodes()
     estado = np.array([1, 0, 0, 0], dtype=np.int8)
-    system = Sistema(tpm, estado)
+    sistema = Sistema(tpm, estado)
 
-    dist = system.distribucion_marginal()
+    distribucion = sistema.distribucion_marginal()
 
-    assert dist.shape == (4,)
+    assert distribucion.shape == (4,)
 
 
 def test_system_bipartir_keeps_indices_subset() -> None:
     tpm = _sample_tpm_4nodes()
     estado = np.array([1, 0, 0, 0], dtype=np.int8)
-    system = Sistema(tpm, estado)
+    sistema = Sistema(tpm, estado)
 
-    partido = system.bipartir(
+    partido = sistema.bipartir(
         alcance_preservado=np.array([0, 1], dtype=np.int8),
         mecanismo_preservado=np.array([0, 1], dtype=np.int8),
     )

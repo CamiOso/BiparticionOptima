@@ -3,7 +3,7 @@ import numpy as np
 from src.funciones.particiones import biparticiones
 from src.funciones.formato import fmt_biparticion
 from src.funciones.iit import seleccionar_emd
-from src.intermedios.perfil import gestor_perfilado, profile
+from src.intermedios.perfil import gestor_perfilado, perfilar
 from src.intermedios.registro import SafeLogger
 from src.modelos.base.sia import SIA
 from src.modelos.nucleo.solucion import Solucion
@@ -16,9 +16,9 @@ class FuerzaBruta(SIA):
         super().__init__(tpm)
         self.distancia_metrica = seleccionar_emd()
         self.logger = SafeLogger("bruteforce_strategy")
-        gestor_perfilado.start_session("FuerzaBruta")
+        gestor_perfilado.iniciar_sesion("FuerzaBruta")
 
-    @profile(name="BruteForce_aplicar_estrategia")
+    @perfilar(name="FuerzaBruta_aplicar_estrategia")
     def aplicar_estrategia(
         self,
         estado_inicial: str,
@@ -50,9 +50,9 @@ class FuerzaBruta(SIA):
 
             if dist_particion.size != dist_subsistema.size:
                 # Alineacion didactica: completamos con ceros para comparar en igual espacio.
-                aligned = np.zeros_like(dist_subsistema)
-                aligned[: dist_particion.size] = dist_particion
-                dist_particion = aligned
+                distribucion_alineada = np.zeros_like(dist_subsistema)
+                distribucion_alineada[: dist_particion.size] = dist_particion
+                dist_particion = distribucion_alineada
 
             perdida = self.distancia_metrica(dist_subsistema, dist_particion)
             if perdida < mejor_perdida:
@@ -71,7 +71,7 @@ class FuerzaBruta(SIA):
         )
         self.logger.debug(f"Perdida calculada: {perdida:.4f}")
 
-        result = Solucion(
+        resultado = Solucion(
             estrategia="FuerzaBruta",
             perdida=float(perdida),
             distribucion_subsistema=dist_subsistema,
@@ -80,7 +80,7 @@ class FuerzaBruta(SIA):
             particion=biparticion_fmt,
         )
         self.logger.info("Estrategia FuerzaBruta finalizada.")
-        return result
+        return resultado
 
 
 # Alias retrocompatible.

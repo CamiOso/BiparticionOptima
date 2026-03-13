@@ -6,33 +6,37 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 
-class ProfilingManager:
+class GestorPerfilado:
     """Gestor simple de perfilado con salida a archivos en review/profiling."""
 
     def __init__(self, enabled: bool = True, output_dir: Path = Path("review/profiling")):
         self.enabled = enabled
         self.output_dir = output_dir
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        self.current_session: Optional[Path] = None
+        self.sesion_actual: Optional[Path] = None
 
-    def start_session(self, session_name: str) -> None:
+    def iniciar_sesion(self, nombre_sesion: str) -> None:
         if not self.enabled:
             return
         timestamp = datetime.now().strftime("%d_%m_%Y/%Hhrs")
-        session = self.output_dir / session_name / timestamp
-        session.mkdir(parents=True, exist_ok=True)
-        self.current_session = session
+        sesion = self.output_dir / nombre_sesion / timestamp
+        sesion.mkdir(parents=True, exist_ok=True)
+        self.sesion_actual = sesion
 
-    def get_output_path(self, name: str, ext: str) -> Path:
-        base = self.current_session or (self.output_dir / "default")
+    def obtener_ruta_salida(self, nombre: str, extension: str) -> Path:
+        base = self.sesion_actual or (self.output_dir / "default")
         base.mkdir(parents=True, exist_ok=True)
-        return base / f"{name}.{ext}"
+        return base / f"{nombre}.{extension}"
+
+    # Aliases retrocompatibles.
+    start_session = iniciar_sesion
+    get_output_path = obtener_ruta_salida
 
 
-gestor_perfilado = ProfilingManager()
+gestor_perfilado = GestorPerfilado()
 
 
-def profile(name: Optional[str] = None) -> Callable:
+def perfilar(name: Optional[str] = None) -> Callable:
     """Decorador de perfilado. Intenta usar pyinstrument; si no existe usa temporizador."""
 
     def decorator(func: Callable) -> Callable:
@@ -48,7 +52,7 @@ def profile(name: Optional[str] = None) -> Callable:
             if not gestor_perfilado.enabled:
                 return func(*args, **kwargs)
 
-            profile_name = name or func.__name__
+            nombre_perfil = name or func.__name__
 
             if profiler_available:
                 profiler = Profiler(interval=0.001, async_mode="disabled")
@@ -56,7 +60,7 @@ def profile(name: Optional[str] = None) -> Callable:
                 result = func(*args, **kwargs)
                 profiler.stop()
 
-                html_path = gestor_perfilado.get_output_path(profile_name, "html")
+                html_path = gestor_perfilado.obtener_ruta_salida(nombre_perfil, "html")
                 html_path.write_text(
                     profiler.output(renderer=HTMLRenderer()),
                     encoding="utf-8",
@@ -69,9 +73,9 @@ def profile(name: Optional[str] = None) -> Callable:
             result = func(*args, **kwargs)
             elapsed = time.perf_counter() - start
 
-            txt_path = gestor_perfilado.get_output_path(profile_name, "txt")
+            txt_path = gestor_perfilado.obtener_ruta_salida(nombre_perfil, "txt")
             txt_path.write_text(
-                f"{profile_name} elapsed_seconds={elapsed:.6f}\n",
+                f"{nombre_perfil} elapsed_seconds={elapsed:.6f}\n",
                 encoding="utf-8",
             )
             return result
@@ -79,3 +83,8 @@ def profile(name: Optional[str] = None) -> Callable:
         return wrapper
 
     return decorator
+
+
+# Alias retrocompatible.
+ProfilingManager = GestorPerfilado
+profile = perfilar

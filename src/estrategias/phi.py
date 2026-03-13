@@ -20,7 +20,7 @@ class Phi(SIA):
         self.sia_preparar_subsistema(estado_inicial, condicion, alcance, mecanismo)
 
         assert self.sia_dists_marginales is not None
-        dist_subsistema = self.sia_dists_marginales
+        distribucion_subsistema = self.sia_dists_marginales
 
         # Etapa inicial: intentamos detectar disponibilidad de pyphi,
         # pero devolvemos un resultado estable mientras construimos la version completa.
@@ -34,8 +34,8 @@ class Phi(SIA):
         return Solucion(
             estrategia=estrategia_nombre,
             perdida=0.0,
-            distribucion_subsistema=dist_subsistema,
-            distribucion_particion=dist_subsistema.copy(),
+            distribucion_subsistema=distribucion_subsistema,
+            distribucion_particion=distribucion_subsistema.copy(),
             estado_inicial=estado_inicial,
             particion="(M=(0,), A=(0,)) | (M*=(), A*=())",
         )

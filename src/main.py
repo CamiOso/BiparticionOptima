@@ -1,7 +1,7 @@
 from src.constantes.base import PROJECT_NAME, PROJECT_VERSION
 from src.constantes.error import ERROR_EMPTY_INPUT, ERROR_INVALID_BITSTRING
 from src.constantes.models import BRUTEFORCE_LABEL
-from src.controladores.gestor import Manager
+from src.controladores.gestor import Gestor
 from src.modelos.base.aplicacion import aplicacion
 from src.modelos.nucleo.ncubo import NCube
 from src.modelos.nucleo.sistema import Sistema
@@ -47,10 +47,10 @@ def iniciar() -> None:
     )
 
     estado_inicial = "1000"
-    gestor = Manager(estado_inicial=estado_inicial)
+    gestor = Gestor(estado_inicial=estado_inicial)
     tpm = gestor.cargar_red()
     logger.debug(f"TPM cargada con forma {tpm.shape}")
-    print(f"TPM cargada desde {gestor.tpm_filename} con forma {tpm.shape}.")
+    print(f"TPM cargada desde {gestor.archivo_tpm} con forma {tpm.shape}.")
 
     estado_vector = np.array([int(bit) for bit in estado_inicial], dtype=np.int8)
     sistema = Sistema(tpm, estado_vector)
@@ -90,16 +90,16 @@ def iniciar() -> None:
     )
     print(f"Q-Nodes demo ->\n{resultado_q}")
 
-    demo_cube = NCube(
+    cubo_demo = NCube(
         indice=0,
         dims=np.array([0, 1], dtype=np.int8),
         data=np.array([[0.0, 1.0], [1.0, 0.0]], dtype=np.float32),
     )
-    cube_marginal = demo_cube.marginalizar(np.array([1], dtype=np.int8))
+    cubo_marginal = cubo_demo.marginalizar(np.array([1], dtype=np.int8))
     print(
         "NCube demo -> "
-        f"dims originales: {demo_cube.dims.tolist()}, "
-        f"dims marginalizadas: {cube_marginal.dims.tolist()}, "
-        f"data: {cube_marginal.data.tolist()}"
+        f"dims originales: {cubo_demo.dims.tolist()}, "
+        f"dims marginalizadas: {cubo_marginal.dims.tolist()}, "
+        f"data: {cubo_marginal.data.tolist()}"
     )
     logger.info("Fin de ejecucion en main.iniciar")
