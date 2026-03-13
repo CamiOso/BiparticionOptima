@@ -40,3 +40,22 @@ def fmt_solution_block(
         f"Dist. subsistema: {fmt_vector(distribucion_subsistema)}\n"
         f"Dist. particion: {fmt_vector(distribucion_particion)}"
     )
+
+
+def fmt_biparticion_q(
+    grupo_uno: list[tuple[int, int]],
+    grupo_dos: list[tuple[int, int]],
+) -> str:
+    """Formatea la biparticion de QNodos usando nodos (tiempo, indice)."""
+
+    def separar(grupo: list[tuple[int, int]]) -> tuple[tuple[int, ...], tuple[int, ...]]:
+        mecanismos = tuple(idx for tiempo, idx in sorted(grupo, key=lambda v: v[1]) if tiempo == 0)
+        alcances = tuple(idx for tiempo, idx in sorted(grupo, key=lambda v: v[1]) if tiempo == 1)
+        return mecanismos, alcances
+
+    mecanismos_uno, alcances_uno = separar(grupo_uno)
+    mecanismos_dos, alcances_dos = separar(grupo_dos)
+    return (
+        f"G1(M={mecanismos_uno}, A={alcances_uno}) | "
+        f"G2(M={mecanismos_dos}, A={alcances_dos})"
+    )

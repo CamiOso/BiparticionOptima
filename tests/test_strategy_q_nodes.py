@@ -42,4 +42,5 @@ def test_qnodes_returns_solution() -> None:
     assert result.perdida >= 0.0
     assert result.distribucion_subsistema.shape == (4,)
     assert result.distribucion_particion.shape == (4,)
-    assert "M*=" in result.particion
+    assert "G1(" in result.particion
+    assert "G2(" in result.particion
