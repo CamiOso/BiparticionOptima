@@ -57,6 +57,12 @@ def iniciar() -> None:
         mecanismo="1111",
     )
     print(f"SIA demo -> {resultado}")
+    print(
+        "Perdida demo -> "
+        f"{resultado['perdida']:.4f} | "
+        f"subsistema={resultado['dist_marginal_subsistema']} vs "
+        f"particion={resultado['dist_marginal_particion']}"
+    )
 
     demo_cube = NCube(
         indice=0,
