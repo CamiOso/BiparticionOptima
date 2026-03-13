@@ -1,6 +1,7 @@
 import numpy as np
 
 from src.funcs.force import biparticiones
+from src.funcs.format import fmt_biparticion
 from src.funcs.iit import seleccionar_emd
 from src.middlewares.profile import gestor_perfilado, profile
 from src.middlewares.slogger import SafeLogger
@@ -37,6 +38,8 @@ class BruteForce(SIA):
 
         mejor_perdida = np.inf
         mejor_dist_particion = dist_subsistema.copy()
+        mejor_subalcance: tuple[int, ...] = ()
+        mejor_submecanismo: tuple[int, ...] = ()
 
         for subalcance, submecanismo in biparticiones(alcance_indices, mecanismo_indices):
             sistema_partido = self.sia_subsistema.bipartir(
@@ -55,9 +58,17 @@ class BruteForce(SIA):
             if perdida < mejor_perdida:
                 mejor_perdida = perdida
                 mejor_dist_particion = dist_particion
+                mejor_subalcance = subalcance
+                mejor_submecanismo = submecanismo
 
         perdida = mejor_perdida
         dist_particion = mejor_dist_particion
+        biparticion_fmt = fmt_biparticion(
+            mejor_subalcance,
+            mejor_submecanismo,
+            tuple(int(v) for v in alcance_indices.tolist()),
+            tuple(int(v) for v in mecanismo_indices.tolist()),
+        )
         self.logger.debug(f"Perdida calculada: {perdida:.4f}")
 
         result = Solution(
@@ -66,6 +77,7 @@ class BruteForce(SIA):
             distribucion_subsistema=dist_subsistema,
             distribucion_particion=dist_particion,
             estado_inicial=estado_inicial,
+            particion=biparticion_fmt,
         )
         self.logger.info("Estrategia BruteForce finalizada.")
         return result
