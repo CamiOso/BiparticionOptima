@@ -13,7 +13,7 @@ class QNodos(SIA):
         super().__init__(tpm)
         self.distancia_metrica = seleccionar_emd()
         self.memoria_delta: dict[tuple[tuple[int, ...], tuple[int, ...]], tuple[float, np.ndarray]] = {}
-        self.memoria_grupo_candidato: dict[tuple[tuple[int, int], ...], tuple[float, np.ndarray]] = {}
+        self.memoria_grupo_candidato: dict[tuple[tuple[int, int], ...], tuple[float, np.ndarray | None]] = {}
         self.clave_submodular: list[list[int]] = [[], []]
         self.vertices: set[tuple[int, int]] = set()
 
@@ -40,6 +40,7 @@ class QNodos(SIA):
 
         clave_mip = self.algoritmo_q(vertices)
         perdida_mip, distribucion_particion = self.memoria_grupo_candidato[clave_mip]
+        assert distribucion_particion is not None
         biparticion = fmt_biparticion_q(
             list(clave_mip),
             self.nodos_complemento(list(clave_mip)),
@@ -95,10 +96,6 @@ class QNodos(SIA):
 
             if deltas_ciclo:
                 clave_final = self._normalizar_grupo(deltas_ciclo[-1])
-                if dist_particion_candidata is None:
-                    assert self.sia_dists_marginales is not None
-                    dist_particion_candidata = self.sia_dists_marginales.copy()
-                    emd_particion_candidata = 0.0
                 self.memoria_grupo_candidato[clave_final] = (
                     float(emd_particion_candidata),
                     dist_particion_candidata,

@@ -1,5 +1,7 @@
 import numpy as np
 
+from src.controladores.gestor import Gestor
+from src.modelos.base.aplicacion import aplicacion
 from src.modelos.nucleo.solucion import Solucion
 from src.estrategias.q_nodos import QNodos
 
@@ -44,3 +46,19 @@ def test_qnodes_returns_solution() -> None:
     assert result.distribucion_particion.shape == (4,)
     assert "G1(" in result.particion
     assert "G2(" in result.particion
+
+
+def test_qnodes_matches_sample_a_reference_case() -> None:
+    aplicacion.set_pagina_red_muestra("A")
+    estrategia = QNodos(Gestor("1000").cargar_red())
+
+    resultado = estrategia.aplicar_estrategia(
+        estado_inicial="1000",
+        condicion="1110",
+        alcance="1110",
+        mecanismo="1110",
+    )
+
+    assert resultado.distribucion_subsistema.tolist() == [0.0, 0.0, 1.0]
+    assert resultado.distribucion_particion.tolist() == [0.0, 0.0, 0.5]
+    assert resultado.perdida == 0.5
