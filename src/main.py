@@ -8,8 +8,12 @@ from src.models.core.system import System
 from src.models.enums.distance import MetricDistance
 from src.models.enums.notation import Notation
 from src.models.enums.temporal_emd import TimeEMD
+from src.middlewares.slogger import SafeLogger
 from src.strategies.force import BruteForce
 import numpy as np
+
+
+logger = SafeLogger("main")
 
 
 def validar_bitstring(value: str) -> None:
@@ -22,6 +26,7 @@ def validar_bitstring(value: str) -> None:
 
 def iniciar() -> None:
     """Orquestador inicial del proyecto."""
+    logger.info("Inicio de ejecucion en main.iniciar")
     validar_bitstring("1000")
     aplicacion.set_pagina_red_muestra("A")
     print(
@@ -42,6 +47,7 @@ def iniciar() -> None:
     estado_inicial = "1000"
     gestor = Manager(estado_inicial=estado_inicial)
     tpm = gestor.cargar_red()
+    logger.debug(f"TPM cargada con forma {tpm.shape}")
     print(f"TPM cargada desde {gestor.tpm_filename} con forma {tpm.shape}.")
 
     estado_vector = np.array([int(bit) for bit in estado_inicial], dtype=np.int8)
@@ -76,3 +82,4 @@ def iniciar() -> None:
         f"dims marginalizadas: {cube_marginal.dims.tolist()}, "
         f"data: {cube_marginal.data.tolist()}"
     )
+    logger.info("Fin de ejecucion en main.iniciar")

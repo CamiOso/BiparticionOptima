@@ -1,0 +1,3 @@
+2026-03-13 05:00:56,565 [main] INFO: Inicio de ejecucion en main.iniciar
+2026-03-13 05:00:56,569 [main] DEBUG: TPM cargada con forma (16, 4)
+2026-03-13 05:00:56,572 [main] INFO: Fin de ejecucion en main.iniciar
