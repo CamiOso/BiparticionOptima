@@ -1,5 +1,6 @@
 from src.constants.base import PROJECT_NAME, PROJECT_VERSION
 from src.constants.error import ERROR_EMPTY_INPUT, ERROR_INVALID_BITSTRING
+from src.constants.models import BRUTEFORCE_LABEL
 
 
 def validar_bitstring(value: str) -> None:
@@ -13,4 +14,6 @@ def validar_bitstring(value: str) -> None:
 def iniciar() -> None:
     """Orquestador inicial del proyecto."""
     validar_bitstring("1000")
-    print(f"{PROJECT_NAME} v{PROJECT_VERSION}: proyecto iniciado correctamente.")
+    print(
+        f"{PROJECT_NAME} v{PROJECT_VERSION}: proyecto iniciado correctamente con estrategia base {BRUTEFORCE_LABEL}."
+    )
