@@ -1,4 +1,7 @@
+from pathlib import Path
+
 import numpy as np
+import pandas as pd
 
 from src.modelos.base.aplicacion import aplicacion
 from src.modelos.nucleo.solucion import Solucion
@@ -43,3 +46,21 @@ def test_bruteforce_returns_solution() -> None:
     assert isinstance(result, Solucion)
     assert result.perdida >= 0.0
     assert result.distribucion_subsistema.shape == (4,)
+
+
+def test_bruteforce_generates_analysis_report(tmp_path: Path) -> None:
+    aplicacion.set_pagina_red_muestra("A")
+    estrategia = FuerzaBruta(_sample_tpm_4nodes())
+
+    directorio = estrategia.analizar_red_completa(
+        estado_inicial="1000",
+        directorio_salida=tmp_path / "salida",
+    )
+
+    archivos = sorted(directorio.glob("*.xlsx"))
+
+    assert directorio.exists()
+    assert archivos
+
+    libro = pd.ExcelFile(archivos[0])
+    assert libro.sheet_names

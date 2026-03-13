@@ -7,6 +7,20 @@ from src.modelos.base.aplicacion import aplicacion
 from src.modelos.enumeraciones.emd_temporal import TimeEMD
 
 
+ABECEDARIO = tuple(chr(ord("A") + indice) for indice in range(26))
+
+
+def literales(indices_restantes: NDArray[np.int8], minuscula: bool = False) -> str:
+    """Convierte indices de nodos a una etiqueta literal amigable."""
+    if indices_restantes.size == 0:
+        return "vacio"
+    letras = []
+    for indice in indices_restantes.tolist():
+        letra = ABECEDARIO[int(indice)] if int(indice) < len(ABECEDARIO) else f"N{indice}"
+        letras.append(letra.lower() if minuscula else letra)
+    return "".join(letras)
+
+
 def emd_efecto(u: NDArray[np.float32], v: NDArray[np.float32]) -> float:
     """Distancia EMD simplificada para el modo efecto."""
     return float(np.sum(np.abs(u - v)))
