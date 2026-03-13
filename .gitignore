@@ -1,0 +1,13 @@
+# Entorno
+.venv/
+
+# Cache Python
+__pycache__/
+*.pyc
+
+# Logs y salidas temporales
+.logs/
+
+# Artefactos comunes
+*.log
+.DS_Store
