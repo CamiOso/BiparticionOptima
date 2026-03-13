@@ -11,6 +11,7 @@ from src.models.enums.temporal_emd import TimeEMD
 from src.middlewares.slogger import SafeLogger
 from src.strategies.force import BruteForce
 from src.strategies.phi import Phi
+from src.strategies.q_nodes import QNodes
 import numpy as np
 
 
@@ -79,6 +80,15 @@ def iniciar() -> None:
         mecanismo="1111",
     )
     print(f"Phi demo ->\n{resultado_phi}")
+
+    estrategia_q = QNodes(tpm)
+    resultado_q = estrategia_q.aplicar_estrategia(
+        estado_inicial=estado_inicial,
+        condicion="1111",
+        alcance="1111",
+        mecanismo="1111",
+    )
+    print(f"Q-Nodes demo ->\n{resultado_q}")
 
     demo_cube = NCube(
         indice=0,
