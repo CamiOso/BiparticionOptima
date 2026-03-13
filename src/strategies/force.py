@@ -2,6 +2,7 @@ import numpy as np
 
 from src.funcs.iit import seleccionar_emd
 from src.models.base.sia import SIA
+from src.models.core.solution import Solution
 
 
 class BruteForce(SIA):
@@ -17,7 +18,7 @@ class BruteForce(SIA):
         condicion: str,
         alcance: str,
         mecanismo: str,
-    ) -> dict:
+    ) -> Solution:
         self.sia_preparar_subsistema(estado_inicial, condicion, alcance, mecanismo)
 
         assert self.sia_dists_marginales is not None
@@ -28,10 +29,10 @@ class BruteForce(SIA):
         dist_particion = np.roll(dist_subsistema, 1)
         perdida = self.distancia_metrica(dist_subsistema, dist_particion)
 
-        return {
-            "estrategia": "BruteForce",
-            "dist_marginal_subsistema": dist_subsistema.tolist(),
-            "dist_marginal_particion": dist_particion.tolist(),
-            "perdida": float(perdida),
-            "estado_inicial": estado_inicial,
-        }
+        return Solution(
+            estrategia="BruteForce",
+            perdida=float(perdida),
+            distribucion_subsistema=dist_subsistema,
+            distribucion_particion=dist_particion,
+            estado_inicial=estado_inicial,
+        )
