@@ -4,14 +4,14 @@ from src.constantes.models import BRUTEFORCE_LABEL
 from src.controladores.gestor import Manager
 from src.modelos.base.aplicacion import aplicacion
 from src.modelos.nucleo.ncubo import NCube
-from src.modelos.nucleo.sistema import System
+from src.modelos.nucleo.sistema import Sistema
 from src.modelos.enumeraciones.distancia import MetricDistance
 from src.modelos.enumeraciones.notacion import Notation
 from src.modelos.enumeraciones.emd_temporal import TimeEMD
 from src.intermedios.registro import SafeLogger
-from src.estrategias.fuerza_bruta import BruteForce
+from src.estrategias.fuerza_bruta import FuerzaBruta
 from src.estrategias.phi import Phi
-from src.estrategias.q_nodos import QNodes
+from src.estrategias.q_nodos import QNodos
 import numpy as np
 
 
@@ -53,11 +53,11 @@ def iniciar() -> None:
     print(f"TPM cargada desde {gestor.tpm_filename} con forma {tpm.shape}.")
 
     estado_vector = np.array([int(bit) for bit in estado_inicial], dtype=np.int8)
-    system = System(tpm, estado_vector)
-    dist_marginal = system.distribucion_marginal()
-    print(f"System demo -> distribucion marginal: {dist_marginal.tolist()}")
+    sistema = Sistema(tpm, estado_vector)
+    dist_marginal = sistema.distribucion_marginal()
+    print(f"Sistema demo -> distribucion marginal: {dist_marginal.tolist()}")
 
-    estrategia = BruteForce(tpm)
+    estrategia = FuerzaBruta(tpm)
     resultado = estrategia.aplicar_estrategia(
         estado_inicial=estado_inicial,
         condicion="1111",
@@ -81,7 +81,7 @@ def iniciar() -> None:
     )
     print(f"Phi demo ->\n{resultado_phi}")
 
-    estrategia_q = QNodes(tpm)
+    estrategia_q = QNodos(tpm)
     resultado_q = estrategia_q.aplicar_estrategia(
         estado_inicial=estado_inicial,
         condicion="1111",

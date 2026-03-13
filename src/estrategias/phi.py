@@ -1,7 +1,7 @@
 import numpy as np
 
 from src.modelos.base.sia import SIA
-from src.modelos.nucleo.solucion import Solution
+from src.modelos.nucleo.solucion import Solucion
 
 
 class Phi(SIA):
@@ -16,7 +16,7 @@ class Phi(SIA):
         condicion: str,
         alcance: str,
         mecanismo: str,
-    ) -> Solution:
+    ) -> Solucion:
         self.sia_preparar_subsistema(estado_inicial, condicion, alcance, mecanismo)
 
         assert self.sia_dists_marginales is not None
@@ -31,7 +31,7 @@ class Phi(SIA):
         except Exception:
             estrategia_nombre = "PyPhi-fallback"
 
-        return Solution(
+        return Solucion(
             estrategia=estrategia_nombre,
             perdida=0.0,
             distribucion_subsistema=dist_subsistema,

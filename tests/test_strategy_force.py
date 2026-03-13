@@ -1,8 +1,8 @@
 import numpy as np
 
 from src.modelos.base.aplicacion import aplicacion
-from src.modelos.nucleo.solucion import Solution
-from src.estrategias.fuerza_bruta import BruteForce
+from src.modelos.nucleo.solucion import Solucion
+from src.estrategias.fuerza_bruta import FuerzaBruta
 
 
 def _sample_tpm_4nodes() -> np.ndarray:
@@ -31,7 +31,7 @@ def _sample_tpm_4nodes() -> np.ndarray:
 
 def test_bruteforce_returns_solution() -> None:
     aplicacion.set_pagina_red_muestra("A")
-    strategy = BruteForce(_sample_tpm_4nodes())
+    strategy = FuerzaBruta(_sample_tpm_4nodes())
 
     result = strategy.aplicar_estrategia(
         estado_inicial="1000",
@@ -40,6 +40,6 @@ def test_bruteforce_returns_solution() -> None:
         mecanismo="1111",
     )
 
-    assert isinstance(result, Solution)
+    assert isinstance(result, Solucion)
     assert result.perdida >= 0.0
     assert result.distribucion_subsistema.shape == (4,)

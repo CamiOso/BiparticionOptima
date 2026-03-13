@@ -3,6 +3,6 @@
 DUMMY_EMD: float = -1.0
 DUMMY_PARTITION: str = "NO-PARTITION"
 
-BRUTEFORCE_LABEL: str = "BruteForce"
+BRUTEFORCE_LABEL: str = "FuerzaBruta"
 PYPHI_LABEL: str = "PyPhi"
-QNODES_LABEL: str = "Q-Nodes"
+QNODES_LABEL: str = "QNodos"

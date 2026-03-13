@@ -6,17 +6,17 @@ from src.funciones.iit import seleccionar_emd
 from src.intermedios.perfil import gestor_perfilado, profile
 from src.intermedios.registro import SafeLogger
 from src.modelos.base.sia import SIA
-from src.modelos.nucleo.solucion import Solution
+from src.modelos.nucleo.solucion import Solucion
 
 
-class BruteForce(SIA):
+class FuerzaBruta(SIA):
     """Implementacion inicial de fuerza bruta (version didactica minima)."""
 
     def __init__(self, tpm: np.ndarray) -> None:
         super().__init__(tpm)
         self.distancia_metrica = seleccionar_emd()
         self.logger = SafeLogger("bruteforce_strategy")
-        gestor_perfilado.start_session("BruteForce")
+        gestor_perfilado.start_session("FuerzaBruta")
 
     @profile(name="BruteForce_aplicar_estrategia")
     def aplicar_estrategia(
@@ -25,8 +25,8 @@ class BruteForce(SIA):
         condicion: str,
         alcance: str,
         mecanismo: str,
-    ) -> Solution:
-        self.logger.info("Iniciando estrategia BruteForce.")
+    ) -> Solucion:
+        self.logger.info("Iniciando estrategia FuerzaBruta.")
         self.sia_preparar_subsistema(estado_inicial, condicion, alcance, mecanismo)
 
         assert self.sia_dists_marginales is not None
@@ -71,13 +71,17 @@ class BruteForce(SIA):
         )
         self.logger.debug(f"Perdida calculada: {perdida:.4f}")
 
-        result = Solution(
-            estrategia="BruteForce",
+        result = Solucion(
+            estrategia="FuerzaBruta",
             perdida=float(perdida),
             distribucion_subsistema=dist_subsistema,
             distribucion_particion=dist_particion,
             estado_inicial=estado_inicial,
             particion=biparticion_fmt,
         )
-        self.logger.info("Estrategia BruteForce finalizada.")
+        self.logger.info("Estrategia FuerzaBruta finalizada.")
         return result
+
+
+# Alias retrocompatible.
+BruteForce = FuerzaBruta

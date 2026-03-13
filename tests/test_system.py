@@ -1,6 +1,6 @@
 import numpy as np
 
-from src.modelos.nucleo.sistema import System
+from src.modelos.nucleo.sistema import Sistema
 
 
 def _sample_tpm_4nodes() -> np.ndarray:
@@ -30,7 +30,7 @@ def _sample_tpm_4nodes() -> np.ndarray:
 def test_system_distribucion_marginal_shape() -> None:
     tpm = _sample_tpm_4nodes()
     estado = np.array([1, 0, 0, 0], dtype=np.int8)
-    system = System(tpm, estado)
+    system = Sistema(tpm, estado)
 
     dist = system.distribucion_marginal()
 
@@ -40,7 +40,7 @@ def test_system_distribucion_marginal_shape() -> None:
 def test_system_bipartir_keeps_indices_subset() -> None:
     tpm = _sample_tpm_4nodes()
     estado = np.array([1, 0, 0, 0], dtype=np.int8)
-    system = System(tpm, estado)
+    system = Sistema(tpm, estado)
 
     partido = system.bipartir(
         alcance_preservado=np.array([0, 1], dtype=np.int8),

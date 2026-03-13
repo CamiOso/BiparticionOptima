@@ -6,7 +6,7 @@ from src.funciones.formato import fmt_solution_block
 
 
 @dataclass
-class Solution:
+class Solucion:
     """Resultado estandar de una estrategia de analisis."""
 
     estrategia: str
@@ -25,3 +25,7 @@ class Solution:
             distribucion_particion=self.distribucion_particion,
             particion=self.particion,
         )
+
+
+# Alias retrocompatible.
+Solution = Solucion

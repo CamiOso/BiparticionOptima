@@ -4,7 +4,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from src.constantes.error import ERROR_INVALID_BITSTRING
-from src.modelos.nucleo.sistema import System
+from src.modelos.nucleo.sistema import Sistema
 
 
 class SIA(ABC):
@@ -12,7 +12,7 @@ class SIA(ABC):
 
     def __init__(self, tpm: np.ndarray) -> None:
         self.tpm = tpm
-        self.sia_subsistema: System | None = None
+        self.sia_subsistema: Sistema | None = None
         self.sia_dists_marginales: NDArray[np.float32] | None = None
 
     @abstractmethod
@@ -52,7 +52,7 @@ class SIA(ABC):
         self.chequear_parametros(estado_inicial, condicion, alcance, mecanismo)
 
         estado_vec = np.array([int(bit) for bit in estado_inicial], dtype=np.int8)
-        system = System(self.tpm, estado_vec)
+        system = Sistema(self.tpm, estado_vec)
 
         self.sia_subsistema = system
         self.sia_dists_marginales = system.distribucion_marginal()

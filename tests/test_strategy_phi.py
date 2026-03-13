@@ -1,6 +1,6 @@
 import numpy as np
 
-from src.modelos.nucleo.solucion import Solution
+from src.modelos.nucleo.solucion import Solucion
 from src.estrategias.phi import Phi
 
 
@@ -38,6 +38,6 @@ def test_phi_returns_solution() -> None:
         mecanismo="1111",
     )
 
-    assert isinstance(result, Solution)
+    assert isinstance(result, Solucion)
     assert result.perdida >= 0.0
     assert result.distribucion_subsistema.shape == (4,)
