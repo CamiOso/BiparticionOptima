@@ -1,6 +1,7 @@
 from src.constants.base import PROJECT_NAME, PROJECT_VERSION
 from src.constants.error import ERROR_EMPTY_INPUT, ERROR_INVALID_BITSTRING
 from src.constants.models import BRUTEFORCE_LABEL
+from src.controllers.manager import Manager
 from src.models.base.application import aplicacion
 from src.models.enums.distance import MetricDistance
 from src.models.enums.notation import Notation
@@ -33,3 +34,8 @@ def iniciar() -> None:
         f"pagina: {aplicacion.pagina_red_muestra}, "
         f"distancia: {aplicacion.distancia_metrica}."
     )
+
+    estado_inicial = "1000"
+    gestor = Manager(estado_inicial=estado_inicial)
+    tpm = gestor.cargar_red()
+    print(f"TPM cargada desde {gestor.tpm_filename} con forma {tpm.shape}.")
