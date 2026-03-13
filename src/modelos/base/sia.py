@@ -48,11 +48,30 @@ class SIA(ABC):
         alcance: str,
         mecanismo: str,
     ) -> None:
-        """Prepara un subsistema base. En este paso inicial no hay particionado."""
+        """Prepara subsistema aplicando condicionamiento y sustracciones de entrada."""
         self.chequear_parametros(estado_inicial, condicion, alcance, mecanismo)
 
         estado_vec = np.array([int(bit) for bit in estado_inicial], dtype=np.int8)
-        sistema = Sistema(self.tpm, estado_vec)
+        sistema_completo = Sistema(self.tpm, estado_vec)
+
+        indices_condicionados = np.array(
+            [indice for indice, bit in enumerate(condicion) if bit == "0"],
+            dtype=np.int8,
+        )
+        indices_alcance_sustraidos = np.array(
+            [indice for indice, bit in enumerate(alcance) if bit == "0"],
+            dtype=np.int8,
+        )
+        indices_mecanismo_sustraidos = np.array(
+            [indice for indice, bit in enumerate(mecanismo) if bit == "0"],
+            dtype=np.int8,
+        )
+
+        sistema_candidato = sistema_completo.condicionar(indices_condicionados)
+        sistema = sistema_candidato.substraer(
+            indices_alcance_sustraidos,
+            indices_mecanismo_sustraidos,
+        )
 
         self.sia_subsistema = sistema
         self.sia_dists_marginales = sistema.distribucion_marginal()

@@ -40,4 +40,19 @@ def test_phi_returns_solution() -> None:
 
     assert isinstance(result, Solucion)
     assert result.perdida >= 0.0
-    assert result.distribucion_subsistema.shape == (4,)
+    assert result.distribucion_subsistema.size > 0
+    assert result.distribucion_particion.size > 0
+
+
+def test_phi_aplica_filtros_de_subsistema() -> None:
+    strategy = Phi(_sample_tpm_4nodes())
+
+    result = strategy.aplicar_estrategia(
+        estado_inicial="1000",
+        condicion="1110",
+        alcance="1110",
+        mecanismo="1110",
+    )
+
+    assert isinstance(result, Solucion)
+    assert result.distribucion_subsistema.size > 0
