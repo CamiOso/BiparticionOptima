@@ -8,6 +8,7 @@ from src.models.core.system import System
 from src.models.enums.distance import MetricDistance
 from src.models.enums.notation import Notation
 from src.models.enums.temporal_emd import TimeEMD
+from src.strategies.force import BruteForce
 import numpy as np
 
 
@@ -47,6 +48,15 @@ def iniciar() -> None:
     system = System(tpm, estado_vector)
     dist_marginal = system.distribucion_marginal()
     print(f"System demo -> distribucion marginal: {dist_marginal.tolist()}")
+
+    estrategia = BruteForce(tpm)
+    resultado = estrategia.aplicar_estrategia(
+        estado_inicial=estado_inicial,
+        condicion="1111",
+        alcance="1111",
+        mecanismo="1111",
+    )
+    print(f"SIA demo -> {resultado}")
 
     demo_cube = NCube(
         indice=0,
