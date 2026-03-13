@@ -1,6 +1,7 @@
 import numpy as np
 
 from src.funcs.iit import seleccionar_emd
+from src.middlewares.profile import gestor_perfilado, profile
 from src.middlewares.slogger import SafeLogger
 from src.models.base.sia import SIA
 from src.models.core.solution import Solution
@@ -13,7 +14,9 @@ class BruteForce(SIA):
         super().__init__(tpm)
         self.distancia_metrica = seleccionar_emd()
         self.logger = SafeLogger("bruteforce_strategy")
+        gestor_perfilado.start_session("BruteForce")
 
+    @profile(name="BruteForce_aplicar_estrategia")
     def aplicar_estrategia(
         self,
         estado_inicial: str,
