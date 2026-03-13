@@ -31,26 +31,33 @@ class BruteForce(SIA):
         assert self.sia_dists_marginales is not None
         dist_subsistema = self.sia_dists_marginales
 
-        # Version didactica inicial: tomamos la primera biparticion no trivial
-        # y construimos una distribucion candidata en funcion de sus indices.
         assert self.sia_subsistema is not None
         alcance_indices = self.sia_subsistema.indices_ncubos
         mecanismo_indices = self.sia_subsistema.dims_ncubos
 
-        try:
-            subalcance, submecanismo = next(
-                biparticiones(alcance_indices, mecanismo_indices)
+        mejor_perdida = np.inf
+        mejor_dist_particion = dist_subsistema.copy()
+
+        for subalcance, submecanismo in biparticiones(alcance_indices, mecanismo_indices):
+            sistema_partido = self.sia_subsistema.bipartir(
+                np.array(subalcance, dtype=np.int8),
+                np.array(submecanismo, dtype=np.int8),
             )
-        except StopIteration:
-            subalcance, submecanismo = (), ()
+            dist_particion = sistema_partido.distribucion_marginal()
 
-        factor = len(subalcance) + len(submecanismo)
-        if factor == 0:
-            dist_particion = dist_subsistema.copy()
-        else:
-            dist_particion = np.roll(dist_subsistema, factor % dist_subsistema.size)
+            if dist_particion.size != dist_subsistema.size:
+                # Alineacion didactica: completamos con ceros para comparar en igual espacio.
+                aligned = np.zeros_like(dist_subsistema)
+                aligned[: dist_particion.size] = dist_particion
+                dist_particion = aligned
 
-        perdida = self.distancia_metrica(dist_subsistema, dist_particion)
+            perdida = self.distancia_metrica(dist_subsistema, dist_particion)
+            if perdida < mejor_perdida:
+                mejor_perdida = perdida
+                mejor_dist_particion = dist_particion
+
+        perdida = mejor_perdida
+        dist_particion = mejor_dist_particion
         self.logger.debug(f"Perdida calculada: {perdida:.4f}")
 
         result = Solution(

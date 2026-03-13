@@ -11,6 +11,17 @@ class System:
         self.estado_inicial = estado_inicio
         self.ncubos = self._crear_ncubos(tpm)
 
+    @classmethod
+    def _from_cubes(
+        cls,
+        estado_inicio: NDArray[np.int8],
+        cubes: tuple[NCube, ...],
+    ) -> "System":
+        inst = cls.__new__(cls)
+        inst.estado_inicial = estado_inicio
+        inst.ncubos = cubes
+        return inst
+
     def _crear_ncubos(self, tpm: np.ndarray) -> tuple[NCube, ...]:
         num_nodos = tpm.shape[1]
         expected_rows = 1 << num_nodos
@@ -39,13 +50,53 @@ class System:
             return np.array([], dtype=np.int8)
         return self.ncubos[0].dims
 
+    def condicionar(self, indices: NDArray[np.int8]) -> "System":
+        """Aplica condiciones de fondo y elimina n-cubos de esos indices."""
+        indices_validos = np.intersect1d(self.indices_ncubos, indices)
+        if not indices_validos.size:
+            return self
+
+        nuevos = tuple(
+            cube.condicionar(indices_validos, self.estado_inicial)
+            for cube in self.ncubos
+            if cube.indice not in indices_validos
+        )
+        return System._from_cubes(self.estado_inicial, nuevos)
+
+    def substraer(
+        self,
+        alcance_idx: NDArray[np.int8],
+        mecanismo_dims: NDArray[np.int8],
+    ) -> "System":
+        """Remueve futuros (indices de n-cubo) y marginaliza dimensiones de mecanismo."""
+        alcance_set = {int(v) for v in alcance_idx.tolist()}
+        nuevos = tuple(
+            cube.marginalizar(mecanismo_dims)
+            for cube in self.ncubos
+            if cube.indice not in alcance_set
+        )
+        return System._from_cubes(self.estado_inicial, nuevos)
+
+    def bipartir(
+        self,
+        alcance_preservado: NDArray[np.int8],
+        mecanismo_preservado: NDArray[np.int8],
+    ) -> "System":
+        """Genera una particion preservando subset de alcance y mecanismo."""
+        alcance_eliminar = np.setdiff1d(self.indices_ncubos, alcance_preservado)
+        mecanismo_eliminar = np.setdiff1d(self.dims_ncubos, mecanismo_preservado)
+        return self.substraer(alcance_eliminar, mecanismo_eliminar)
+
     def distribucion_marginal(self) -> NDArray[np.float32]:
         """Calcula P(nodo_i = ON) en el estado inicial para cada n-cubo."""
+        if not self.ncubos:
+            return np.array([], dtype=np.float32)
+
         probs = []
         for cube in self.ncubos:
             seleccion = [slice(None)] * cube.dims.size
-            for dim in cube.dims:
-                posicion_local = cube.dims.size - (int(dim) + 1)
+            for local_idx, dim in enumerate(cube.dims):
+                posicion_local = cube.dims.size - (local_idx + 1)
                 seleccion[posicion_local] = int(self.estado_inicial[int(dim)])
             probs.append(float(cube.data[tuple(seleccion)]))
         return np.array(probs, dtype=np.float32)

@@ -36,6 +36,13 @@ def profile(name: Optional[str] = None) -> Callable:
     """Decorador de perfilado. Intenta usar pyinstrument; si no existe usa temporizador."""
 
     def decorator(func: Callable) -> Callable:
+        profiler_available = True
+        try:
+            from pyinstrument import Profiler
+            from pyinstrument.renderers import HTMLRenderer
+        except Exception:
+            profiler_available = False
+
         @wraps(func)
         def wrapper(*args, **kwargs) -> Any:
             if not gestor_perfilado.enabled:
@@ -43,10 +50,7 @@ def profile(name: Optional[str] = None) -> Callable:
 
             profile_name = name or func.__name__
 
-            try:
-                from pyinstrument import Profiler
-                from pyinstrument.renderers import HTMLRenderer
-
+            if profiler_available:
                 profiler = Profiler(interval=0.001, async_mode="disabled")
                 profiler.start()
                 result = func(*args, **kwargs)
@@ -58,19 +62,19 @@ def profile(name: Optional[str] = None) -> Callable:
                     encoding="utf-8",
                 )
                 return result
-            except Exception:
-                import time
 
-                start = time.perf_counter()
-                result = func(*args, **kwargs)
-                elapsed = time.perf_counter() - start
+            import time
 
-                txt_path = gestor_perfilado.get_output_path(profile_name, "txt")
-                txt_path.write_text(
-                    f"{profile_name} elapsed_seconds={elapsed:.6f}\n",
-                    encoding="utf-8",
-                )
-                return result
+            start = time.perf_counter()
+            result = func(*args, **kwargs)
+            elapsed = time.perf_counter() - start
+
+            txt_path = gestor_perfilado.get_output_path(profile_name, "txt")
+            txt_path.write_text(
+                f"{profile_name} elapsed_seconds={elapsed:.6f}\n",
+                encoding="utf-8",
+            )
+            return result
 
         return wrapper
 
