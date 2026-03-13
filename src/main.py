@@ -4,6 +4,7 @@ from src.constants.models import BRUTEFORCE_LABEL
 from src.controllers.manager import Manager
 from src.models.base.application import aplicacion
 from src.models.core.ncube import NCube
+from src.models.core.system import System
 from src.models.enums.distance import MetricDistance
 from src.models.enums.notation import Notation
 from src.models.enums.temporal_emd import TimeEMD
@@ -41,6 +42,11 @@ def iniciar() -> None:
     gestor = Manager(estado_inicial=estado_inicial)
     tpm = gestor.cargar_red()
     print(f"TPM cargada desde {gestor.tpm_filename} con forma {tpm.shape}.")
+
+    estado_vector = np.array([int(bit) for bit in estado_inicial], dtype=np.int8)
+    system = System(tpm, estado_vector)
+    dist_marginal = system.distribucion_marginal()
+    print(f"System demo -> distribucion marginal: {dist_marginal.tolist()}")
 
     demo_cube = NCube(
         indice=0,
