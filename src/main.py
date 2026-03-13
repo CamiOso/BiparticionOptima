@@ -3,9 +3,11 @@ from src.constants.error import ERROR_EMPTY_INPUT, ERROR_INVALID_BITSTRING
 from src.constants.models import BRUTEFORCE_LABEL
 from src.controllers.manager import Manager
 from src.models.base.application import aplicacion
+from src.models.core.ncube import NCube
 from src.models.enums.distance import MetricDistance
 from src.models.enums.notation import Notation
 from src.models.enums.temporal_emd import TimeEMD
+import numpy as np
 
 
 def validar_bitstring(value: str) -> None:
@@ -39,3 +41,16 @@ def iniciar() -> None:
     gestor = Manager(estado_inicial=estado_inicial)
     tpm = gestor.cargar_red()
     print(f"TPM cargada desde {gestor.tpm_filename} con forma {tpm.shape}.")
+
+    demo_cube = NCube(
+        indice=0,
+        dims=np.array([0, 1], dtype=np.int8),
+        data=np.array([[0.0, 1.0], [1.0, 0.0]], dtype=np.float32),
+    )
+    cube_marginal = demo_cube.marginalizar(np.array([1], dtype=np.int8))
+    print(
+        "NCube demo -> "
+        f"dims originales: {demo_cube.dims.tolist()}, "
+        f"dims marginalizadas: {cube_marginal.dims.tolist()}, "
+        f"data: {cube_marginal.data.tolist()}"
+    )
