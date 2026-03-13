@@ -47,4 +47,5 @@ def test_system_bipartir_keeps_indices_subset() -> None:
         mecanismo_preservado=np.array([0, 1], dtype=np.int8),
     )
 
-    assert set(partido.indices_ncubos.tolist()).issubset({0, 1})
+    assert set(partido.indices_ncubos.tolist()) == {0, 1, 2, 3}
+    assert all(set(cubo.dims.tolist()).issubset({0, 1}) for cubo in partido.ncubos if cubo.indice in {0, 1})

@@ -19,4 +19,5 @@ def test_biparticiones_contains_full_partition() -> None:
 
     parts = list(biparticiones(alcance, mecanismo))
 
-    assert ((0, 1), (0,)) in parts
+    assert ((0, 1), ()) in parts
+    assert ((0, 1), (0,)) not in parts

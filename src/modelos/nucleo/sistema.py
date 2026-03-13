@@ -1,6 +1,7 @@
 import numpy as np
 from numpy.typing import NDArray
 
+from src.funciones.iit import seleccionar_estado
 from src.modelos.nucleo.ncubo import NCube
 
 
@@ -10,6 +11,7 @@ class Sistema:
     def __init__(self, tpm: np.ndarray, estado_inicio: NDArray[np.int8]) -> None:
         self.estado_inicial = estado_inicio
         self.ncubos = self._crear_ncubos(tpm)
+        self.memo: dict[tuple[tuple[int, ...], tuple[int, ...]], tuple[NCube, ...]] = {}
 
     @classmethod
     def _from_cubes(
@@ -20,6 +22,7 @@ class Sistema:
         instancia = cls.__new__(cls)
         instancia.estado_inicial = estado_inicio
         instancia.ncubos = cubos
+        instancia.memo = {}
         return instancia
 
     def _crear_ncubos(self, tpm: np.ndarray) -> tuple[NCube, ...]:
@@ -82,10 +85,18 @@ class Sistema:
         alcance_preservado: NDArray[np.int8],
         mecanismo_preservado: NDArray[np.int8],
     ) -> "Sistema":
-        """Genera una particion preservando subset de alcance y mecanismo."""
-        alcance_eliminar = np.setdiff1d(self.indices_ncubos, alcance_preservado)
-        mecanismo_eliminar = np.setdiff1d(self.dims_ncubos, mecanismo_preservado)
-        return self.substraer(alcance_eliminar, mecanismo_eliminar)
+        """Genera una biparticion replicando la semantica del sistema de referencia."""
+        clave = (tuple(int(v) for v in alcance_preservado), tuple(int(v) for v in mecanismo_preservado))
+        memo = getattr(self, "memo", {})
+        if clave not in memo:
+            memo[clave] = tuple(
+                cubo.marginalizar(np.setdiff1d(cubo.dims, mecanismo_preservado))
+                if cubo.indice in alcance_preservado
+                else cubo.marginalizar(mecanismo_preservado)
+                for cubo in self.ncubos
+            )
+        self.memo = memo
+        return Sistema._from_cubes(self.estado_inicial, memo[clave])
 
     def distribucion_marginal(self) -> NDArray[np.float32]:
         """Calcula P(nodo_i = ON) en el estado inicial para cada n-cubo."""
@@ -94,11 +105,11 @@ class Sistema:
 
         probabilidades = []
         for cubo in self.ncubos:
-            seleccion = [slice(None)] * cubo.dims.size
-            for indice_local, dim in enumerate(cubo.dims):
-                posicion_local = cubo.dims.size - (indice_local + 1)
-                seleccion[posicion_local] = int(self.estado_inicial[int(dim)])
-            probabilidades.append(float(cubo.data[tuple(seleccion)]))
+            probabilidad = cubo.data
+            if cubo.dims.size:
+                inicial = tuple(int(self.estado_inicial[int(dim)]) for dim in cubo.dims)
+                probabilidad = cubo.data[tuple(seleccionar_estado(np.array(inicial, dtype=np.int8)).tolist())]
+            probabilidades.append(float(probabilidad))
         return np.array(probabilidades, dtype=np.float32)
 
 

@@ -3,6 +3,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from src.controladores.gestor import Gestor
 from src.modelos.base.aplicacion import aplicacion
 from src.modelos.nucleo.solucion import Solucion
 from src.estrategias.fuerza_bruta import FuerzaBruta
@@ -64,3 +65,19 @@ def test_bruteforce_generates_analysis_report(tmp_path: Path) -> None:
 
     libro = pd.ExcelFile(archivos[0])
     assert libro.sheet_names
+
+
+def test_bruteforce_matches_reference_case_on_sample_a() -> None:
+    aplicacion.set_pagina_red_muestra("A")
+    estrategia = FuerzaBruta(Gestor("1000").cargar_red())
+
+    resultado = estrategia.aplicar_estrategia(
+        estado_inicial="1000",
+        condicion="1110",
+        alcance="1110",
+        mecanismo="1110",
+    )
+
+    assert resultado.distribucion_subsistema.tolist() == [0.0, 0.0, 1.0]
+    assert resultado.distribucion_particion.tolist() == [0.0, 0.25, 1.0]
+    assert resultado.perdida == 0.25

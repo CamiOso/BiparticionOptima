@@ -14,10 +14,14 @@ def biparticiones(
     alcance_indices: np.ndarray,
     mecanismo_indices: np.ndarray,
 ) -> Iterator[tuple[tuple[int, ...], tuple[int, ...]]]:
-    """Genera pares (subalcance, submecanismo), omitiendo el caso vacio-vacio."""
+    """Genera biparticiones, omitiendo los casos triviales vacio-vacio y total-total."""
+    alcance_total = tuple(int(v) for v in alcance_indices.tolist())
+    mecanismo_total = tuple(int(v) for v in mecanismo_indices.tolist())
     for subalcance in subconjuntos(alcance_indices):
         for submecanismo in subconjuntos(mecanismo_indices):
             if len(subalcance) == 0 and len(submecanismo) == 0:
+                continue
+            if subalcance == alcance_total and submecanismo == mecanismo_total:
                 continue
             yield subalcance, submecanismo
 
