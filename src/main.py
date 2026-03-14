@@ -10,6 +10,7 @@ from src.modelos.enumeraciones.notacion import Notation
 from src.modelos.enumeraciones.emd_temporal import TimeEMD
 from src.intermedios.registro import SafeLogger
 from src.estrategias.fuerza_bruta import FuerzaBruta
+from src.estrategias.geometrica import Geometric
 from src.estrategias.phi import Phi
 from src.estrategias.q_nodos import QNodos
 import numpy as np
@@ -89,6 +90,15 @@ def iniciar() -> None:
         mecanismo="1111",
     )
     print(f"Q-Nodes demo ->\n{resultado_q}")
+
+    estrategia_geometrica = Geometric(tpm)
+    resultado_geometrica = estrategia_geometrica.aplicar_estrategia(
+        estado_inicial=estado_inicial,
+        condicion="1111",
+        alcance="1111",
+        mecanismo="1111",
+    )
+    print(f"Geometric demo ->\n{resultado_geometrica}")
 
     cubo_demo = NCube(
         indice=0,
