@@ -30,6 +30,11 @@ class Geometric(SIA):
         self._max_candidatos_costo_cero = 32
         self._max_seeds_refinamiento = 6
         self._max_iter_refinamiento = 24
+        self._beam_top_k_adaptativo = 20
+        self._max_iter_refinamiento_adaptativo = 40
+        self._umbral_incertidumbre = 0.10
+        self._random_restarts = 20
+        self._umbral_restarts = 0.05
         self._cache_particiones: dict[
             tuple[tuple[int, ...], tuple[int, ...]],
             tuple[float, np.ndarray],
@@ -216,22 +221,107 @@ class Geometric(SIA):
                 semilla,
                 alcance_total,
                 mecanismo_total,
+                max_iter=self._max_iter_refinamiento,
             )
             if refinado.perdida < mejor_resultado.perdida:
                 mejor_resultado = refinado
 
+        # Refinamiento adaptativo: se activa solo si hay alta incertidumbre.
+        if self._debe_refinar_adaptativo(
+            mejor_resultado=mejor_resultado,
+            costos_locales=costos_locales,
+            total_mascaras=total_mascaras,
+            n_nodos=len(nodos),
+        ):
+            mejores_locales = sorted(
+                range(1, total_mascaras - 1),
+                key=lambda mascara: float(costos_locales[mascara]),
+            )[: self._beam_top_k_adaptativo]
+            candidatos_adaptativos = self._expandir_candidatos_adaptativos(
+                mascaras_base=mejores_locales,
+                nodos=nodos,
+                alcance_total=alcance_total,
+                mecanismo_total=mecanismo_total,
+                total_mascaras=total_mascaras,
+            )
+
+            ranking_adaptativo: list[_ResultadoParticion] = []
+            for subalcance, submecanismo in candidatos_adaptativos:
+                perdida, distribucion = self._evaluar_particion(subalcance, submecanismo)
+                ranking_adaptativo.append(
+                    _ResultadoParticion(
+                        perdida=perdida,
+                        distribucion=distribucion,
+                        subalcance=subalcance,
+                        submecanismo=submecanismo,
+                    )
+                )
+
+            ranking_adaptativo.sort(key=lambda item: item.perdida)
+            for semilla in ranking_adaptativo[: self._max_seeds_refinamiento]:
+                refinado = self._refinar_local_desacoplado(
+                    semilla,
+                    alcance_total,
+                    mecanismo_total,
+                    max_iter=self._max_iter_refinamiento_adaptativo,
+                )
+                if refinado.perdida < mejor_resultado.perdida:
+                    mejor_resultado = refinado
+
+        # Restarts deterministas para escapar minimos locales en sistemas grandes.
+        if len(nodos) >= 8 and mejor_resultado.perdida > self._umbral_restarts:
+            semillas = self._generar_semillas_aleatorias(
+                total_mascaras=total_mascaras,
+                cantidad=self._random_restarts,
+            )
+            for mascara in semillas:
+                subalcance, submecanismo = self._particion_desde_mascara(
+                    mascara,
+                    nodos,
+                    alcance_total,
+                    mecanismo_total,
+                )
+                perdida, distribucion = self._evaluar_particion(subalcance, submecanismo)
+                semilla = _ResultadoParticion(
+                    perdida=perdida,
+                    distribucion=distribucion,
+                    subalcance=subalcance,
+                    submecanismo=submecanismo,
+                )
+                refinado = self._refinar_local_desacoplado(
+                    semilla,
+                    alcance_total,
+                    mecanismo_total,
+                    max_iter=self._max_iter_refinamiento_adaptativo,
+                )
+                if refinado.perdida < mejor_resultado.perdida:
+                    mejor_resultado = refinado
+
         return mejor_resultado
+
+    def _generar_semillas_aleatorias(self, total_mascaras: int, cantidad: int) -> list[int]:
+        if total_mascaras <= 2 or cantidad <= 0:
+            return []
+        rng = np.random.default_rng(total_mascaras)
+        semillas = set()
+        while len(semillas) < cantidad:
+            mascara = int(rng.integers(1, total_mascaras - 1))
+            semillas.add(mascara)
+            if len(semillas) >= (total_mascaras - 2):
+                break
+        return sorted(semillas)
 
     def _refinar_local_desacoplado(
         self,
         inicio: _ResultadoParticion,
         alcance_total: tuple[int, ...],
         mecanismo_total: tuple[int, ...],
+        max_iter: int,
     ) -> _ResultadoParticion:
         actual = inicio
         mejor_global = inicio
 
-        for _ in range(self._max_iter_refinamiento):
+        for _ in range(max_iter):
             vecinos = self._vecinos_desacoplados(
                 actual.subalcance,
                 actual.submecanismo,
@@ -260,6 +350,88 @@ class Geometric(SIA):
                 mejor_global = actual
 
         return mejor_global
+
+    def _debe_refinar_adaptativo(
+        self,
+        mejor_resultado: _ResultadoParticion,
+        costos_locales: np.ndarray,
+        total_mascaras: int,
+        n_nodos: int,
+    ) -> bool:
+        if n_nodos < 7:
+            return False
+        if total_mascaras <= 2:
+            return False
+        mejor_local = float(np.min(costos_locales[1: total_mascaras - 1]))
+        brecha = max(0.0, mejor_resultado.perdida - mejor_local)
+        return brecha >= self._umbral_incertidumbre
+
+    def _expandir_candidatos_adaptativos(
+        self,
+        mascaras_base: list[int],
+        nodos: list[int],
+        alcance_total: tuple[int, ...],
+        mecanismo_total: tuple[int, ...],
+        total_mascaras: int,
+    ) -> list[tuple[tuple[int, ...], tuple[int, ...]]]:
+        vistos: set[tuple[tuple[int, ...], tuple[int, ...]]] = set()
+        candidatos: list[tuple[tuple[int, ...], tuple[int, ...]]] = []
+
+        def agregar(subalcance: tuple[int, ...], submecanismo: tuple[int, ...]) -> None:
+            if not subalcance and not submecanismo:
+                return
+            if subalcance == alcance_total and submecanismo == mecanismo_total:
+                return
+            clave = (subalcance, submecanismo)
+            if clave in vistos:
+                return
+            vistos.add(clave)
+            candidatos.append(clave)
+
+        for mascara in mascaras_base:
+            # mascara base y su complemento.
+            base = self._particion_desde_mascara(
+                mascara,
+                nodos,
+                alcance_total,
+                mecanismo_total,
+            )
+            agregar(*base)
+
+            mascara_comp = (total_mascaras - 1) ^ mascara
+            if 0 < mascara_comp < (total_mascaras - 1):
+                comp = self._particion_desde_mascara(
+                    mascara_comp,
+                    nodos,
+                    alcance_total,
+                    mecanismo_total,
+                )
+                agregar(*comp)
+
+            # Vecindad de radio 1 y 2 (bit flips) para mejorar robustez ante outliers.
+            for bit_i in range(len(nodos)):
+                m1 = mascara ^ (1 << bit_i)
+                if 0 < m1 < (total_mascaras - 1):
+                    p1 = self._particion_desde_mascara(
+                        m1,
+                        nodos,
+                        alcance_total,
+                        mecanismo_total,
+                    )
+                    agregar(*p1)
+
+                for bit_j in range(bit_i + 1, len(nodos)):
+                    m2 = mascara ^ (1 << bit_i) ^ (1 << bit_j)
+                    if 0 < m2 < (total_mascaras - 1):
+                        p2 = self._particion_desde_mascara(
+                            m2,
+                            nodos,
+                            alcance_total,
+                            mecanismo_total,
+                        )
+                        agregar(*p2)
+
+        return candidatos
 
     def _vecinos_desacoplados(
         self,
