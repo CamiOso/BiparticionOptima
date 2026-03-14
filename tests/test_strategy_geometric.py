@@ -88,6 +88,32 @@ def test_geometric_matches_bruteforce_in_small_case() -> None:
     )
 
 
+def test_geometric_matches_bruteforce_for_5_nodes() -> None:
+    num_nodos = 5
+    tpm = _random_tpm(num_nodos, seed=23)
+    estado = "0" * num_nodos
+    mascara = "1" * num_nodos
+
+    fuerza_bruta = FuerzaBruta(tpm)
+    geometrica = Geometric(tpm)
+
+    resultado_fb = fuerza_bruta.aplicar_estrategia(
+        estado_inicial=estado,
+        condicion=mascara,
+        alcance=mascara,
+        mecanismo=mascara,
+    )
+    resultado_geo = geometrica.aplicar_estrategia(
+        estado_inicial=estado,
+        condicion=mascara,
+        alcance=mascara,
+        mecanismo=mascara,
+    )
+
+    assert np.isclose(resultado_geo.perdida, resultado_fb.perdida)
+    assert np.allclose(resultado_geo.distribucion_particion, resultado_fb.distribucion_particion)
+
+
 @pytest.mark.skipif(
     os.getenv("RUN_BENCHMARKS") != "1",
     reason="Benchmark desactivado por defecto (export RUN_BENCHMARKS=1 para habilitarlo).",

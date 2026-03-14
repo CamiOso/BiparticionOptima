@@ -26,6 +26,8 @@ class Geometric(SIA):
     def __init__(self, tpm: np.ndarray) -> None:
         super().__init__(tpm)
         self.distancia_metrica = seleccionar_emd()
+        self._beam_top_k = 12
+        self._max_candidatos_costo_cero = 32
         self._cache_particiones: dict[
             tuple[tuple[int, ...], tuple[int, ...]],
             tuple[float, np.ndarray],
@@ -61,7 +63,7 @@ class Geometric(SIA):
 
         # En sistemas pequenos usamos solucion exacta para validar equivalencia con fuerza bruta.
         n_nodos = len(set(alcance_total) | set(mecanismo_total))
-        if n_nodos <= 4:
+        if n_nodos <= 5:
             mejor = self._resolver_exacto(alcance_total, mecanismo_total)
         else:
             mejor = self._resolver_geometrico(alcance_total, mecanismo_total)
@@ -164,6 +166,13 @@ class Geometric(SIA):
         if not candidatos_costo_cero:
             candidatos_costo_cero = {int(np.argmin(costos_locales[1:])) + 1}
 
+        candidatos_base = self._seleccionar_mascaras_base(
+            costos=costos,
+            costos_locales=costos_locales,
+            candidatos_costo_cero=candidatos_costo_cero,
+            total_mascaras=total_mascaras,
+        )
+
         mejor_resultado = _ResultadoParticion(
             perdida=float("inf"),
             distribucion=self.sia_dists_marginales.copy(),
@@ -171,13 +180,15 @@ class Geometric(SIA):
             submecanismo=(),
         )
 
-        for mascara in candidatos_costo_cero:
-            subalcance, submecanismo = self._particion_desde_mascara(
-                mascara,
-                nodos,
-                alcance_total,
-                mecanismo_total,
-            )
+        candidatos = self._expandir_candidatos_vecindad(
+            mascaras_base=candidatos_base,
+            nodos=nodos,
+            alcance_total=alcance_total,
+            mecanismo_total=mecanismo_total,
+            total_mascaras=total_mascaras,
+        )
+
+        for subalcance, submecanismo in candidatos:
             perdida, distribucion = self._evaluar_particion(subalcance, submecanismo)
             if perdida < mejor_resultado.perdida:
                 mejor_resultado = _ResultadoParticion(
@@ -188,6 +199,85 @@ class Geometric(SIA):
                 )
 
         return mejor_resultado
+
+    def _seleccionar_mascaras_base(
+        self,
+        costos: np.ndarray,
+        costos_locales: np.ndarray,
+        candidatos_costo_cero: set[int],
+        total_mascaras: int,
+    ) -> list[int]:
+        internas = list(range(1, total_mascaras - 1))
+        top_costos = sorted(internas, key=lambda mascara: float(costos[mascara]))[: self._beam_top_k]
+        top_locales = sorted(
+            internas,
+            key=lambda mascara: float(costos_locales[mascara]),
+        )[: self._beam_top_k]
+
+        costo_cero_ordenadas = sorted(
+            candidatos_costo_cero,
+            key=lambda mascara: float(costos_locales[mascara]),
+        )[: self._max_candidatos_costo_cero]
+
+        combinadas: list[int] = []
+        for mascara in (costo_cero_ordenadas + top_costos + top_locales):
+            if mascara not in combinadas:
+                combinadas.append(mascara)
+        return combinadas or [int(np.argmin(costos_locales[1:])) + 1]
+
+    def _expandir_candidatos_vecindad(
+        self,
+        mascaras_base: list[int],
+        nodos: list[int],
+        alcance_total: tuple[int, ...],
+        mecanismo_total: tuple[int, ...],
+        total_mascaras: int,
+    ) -> list[tuple[tuple[int, ...], tuple[int, ...]]]:
+        vistos: set[tuple[tuple[int, ...], tuple[int, ...]]] = set()
+        candidatos: list[tuple[tuple[int, ...], tuple[int, ...]]] = []
+
+        def agregar(subalcance: tuple[int, ...], submecanismo: tuple[int, ...]) -> None:
+            if not subalcance and not submecanismo:
+                return
+            if subalcance == alcance_total and submecanismo == mecanismo_total:
+                return
+            clave = (subalcance, submecanismo)
+            if clave in vistos:
+                return
+            vistos.add(clave)
+            candidatos.append(clave)
+
+        for mascara in mascaras_base:
+            subalcance, submecanismo = self._particion_desde_mascara(
+                mascara,
+                nodos,
+                alcance_total,
+                mecanismo_total,
+            )
+            agregar(subalcance, submecanismo)
+
+            for bit in range(len(nodos)):
+                mascara_flip = mascara ^ (1 << bit)
+                if mascara_flip <= 0 or mascara_flip >= (total_mascaras - 1):
+                    continue
+
+                alcance_flip, _ = self._particion_desde_mascara(
+                    mascara_flip,
+                    nodos,
+                    alcance_total,
+                    mecanismo_total,
+                )
+                _, mecanismo_flip = self._particion_desde_mascara(
+                    mascara_flip,
+                    nodos,
+                    alcance_total,
+                    mecanismo_total,
+                )
+
+                agregar(alcance_flip, submecanismo)
+                agregar(subalcance, mecanismo_flip)
+
+        return candidatos
 
     def _particion_desde_mascara(
         self,
