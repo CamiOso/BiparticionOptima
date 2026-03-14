@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import statistics
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -21,6 +22,18 @@ class FilaBenchmark:
     phi_fuerza_bruta: float
     phi_geometric: float
     diferencia_phi: float
+
+
+@dataclass
+class ResumenBenchmark:
+    nodos: int
+    muestras: int
+    tiempo_fuerza_bruta_prom: float
+    tiempo_geometric_prom: float
+    speedup_prom: float
+    speedup_mediana: float
+    diferencia_phi_prom: float
+    diferencia_phi_mediana: float
 
 
 def _random_tpm(num_nodes: int, seed: int) -> np.ndarray:
@@ -45,42 +58,71 @@ def _medir_estrategia(
 
 
 def ejecutar_benchmark() -> list[FilaBenchmark]:
-    configuraciones = [
-        (5, 11),
-        (6, 13),
-        (7, 17),
-        (8, 19),
-    ]
+    configuraciones: dict[int, list[int]] = {
+        5: [11, 29, 47],
+        6: [13, 31, 53],
+        7: [17, 37, 59],
+        8: [19, 41, 61],
+    }
 
     filas: list[FilaBenchmark] = []
 
-    for nodos, semilla in configuraciones:
-        tpm = _random_tpm(nodos, semilla)
-        estado = "0" * nodos
-        mascara = "1" * nodos
+    for nodos, semillas in configuraciones.items():
+        for semilla in semillas:
+            tpm = _random_tpm(nodos, semilla)
+            estado = "0" * nodos
+            mascara = "1" * nodos
 
-        fuerza_bruta = FuerzaBruta(tpm)
-        geometric = Geometric(tpm)
+            fuerza_bruta = FuerzaBruta(tpm)
+            geometric = Geometric(tpm)
 
-        tiempo_fb, phi_fb = _medir_estrategia(fuerza_bruta, estado, mascara)
-        tiempo_geo, phi_geo = _medir_estrategia(geometric, estado, mascara)
+            tiempo_fb, phi_fb = _medir_estrategia(fuerza_bruta, estado, mascara)
+            tiempo_geo, phi_geo = _medir_estrategia(geometric, estado, mascara)
 
-        speedup = (tiempo_fb / tiempo_geo) if tiempo_geo > 0 else float("inf")
+            speedup = (tiempo_fb / tiempo_geo) if tiempo_geo > 0 else float("inf")
 
-        filas.append(
-            FilaBenchmark(
+            filas.append(
+                FilaBenchmark(
+                    nodos=nodos,
+                    semilla=semilla,
+                    tiempo_fuerza_bruta=tiempo_fb,
+                    tiempo_geometric=tiempo_geo,
+                    speedup=speedup,
+                    phi_fuerza_bruta=phi_fb,
+                    phi_geometric=phi_geo,
+                    diferencia_phi=abs(phi_fb - phi_geo),
+                )
+            )
+
+    return filas
+
+
+def resumir_benchmark(filas: list[FilaBenchmark]) -> list[ResumenBenchmark]:
+    agrupado: dict[int, list[FilaBenchmark]] = {}
+    for fila in filas:
+        agrupado.setdefault(fila.nodos, []).append(fila)
+
+    resumenes: list[ResumenBenchmark] = []
+    for nodos, grupo in sorted(agrupado.items()):
+        tiempos_fb = [fila.tiempo_fuerza_bruta for fila in grupo]
+        tiempos_geo = [fila.tiempo_geometric for fila in grupo]
+        speedups = [fila.speedup for fila in grupo]
+        deltas_phi = [fila.diferencia_phi for fila in grupo]
+
+        resumenes.append(
+            ResumenBenchmark(
                 nodos=nodos,
-                semilla=semilla,
-                tiempo_fuerza_bruta=tiempo_fb,
-                tiempo_geometric=tiempo_geo,
-                speedup=speedup,
-                phi_fuerza_bruta=phi_fb,
-                phi_geometric=phi_geo,
-                diferencia_phi=abs(phi_fb - phi_geo),
+                muestras=len(grupo),
+                tiempo_fuerza_bruta_prom=statistics.fmean(tiempos_fb),
+                tiempo_geometric_prom=statistics.fmean(tiempos_geo),
+                speedup_prom=statistics.fmean(speedups),
+                speedup_mediana=statistics.median(speedups),
+                diferencia_phi_prom=statistics.fmean(deltas_phi),
+                diferencia_phi_mediana=statistics.median(deltas_phi),
             )
         )
 
-    return filas
+    return resumenes
 
 
 def guardar_reporte(filas: list[FilaBenchmark], out_dir: Path) -> Path:
@@ -119,6 +161,41 @@ def guardar_reporte(filas: list[FilaBenchmark], out_dir: Path) -> Path:
     return ruta_csv
 
 
+def guardar_resumen(resumenes: list[ResumenBenchmark], out_dir: Path) -> Path:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    ruta_csv = out_dir / "geometric_vs_fuerza_bruta_resumen.csv"
+
+    with ruta_csv.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(
+            [
+                "nodos",
+                "muestras",
+                "tiempo_fuerza_bruta_prom_s",
+                "tiempo_geometric_prom_s",
+                "speedup_prom_x",
+                "speedup_mediana_x",
+                "diferencia_phi_prom_abs",
+                "diferencia_phi_mediana_abs",
+            ]
+        )
+        for item in resumenes:
+            writer.writerow(
+                [
+                    item.nodos,
+                    item.muestras,
+                    f"{item.tiempo_fuerza_bruta_prom:.6f}",
+                    f"{item.tiempo_geometric_prom:.6f}",
+                    f"{item.speedup_prom:.2f}",
+                    f"{item.speedup_mediana:.2f}",
+                    f"{item.diferencia_phi_prom:.6f}",
+                    f"{item.diferencia_phi_mediana:.6f}",
+                ]
+            )
+
+    return ruta_csv
+
+
 def imprimir_resumen(filas: list[FilaBenchmark]) -> None:
     print("nodos | t_fb(s) | t_geo(s) | speedup | phi_fb | phi_geo | |delta_phi|")
     print("-" * 74)
@@ -134,11 +211,35 @@ def imprimir_resumen(filas: list[FilaBenchmark]) -> None:
         )
 
 
+def imprimir_tabla_agregada(resumenes: list[ResumenBenchmark]) -> None:
+    print("\nResumen agregado por nodos")
+    print("nodos | muestras | speedup_prom | speedup_mediana | delta_phi_prom | delta_phi_mediana")
+    print("-" * 89)
+    for item in resumenes:
+        print(
+            f"{item.nodos:>5} | "
+            f"{item.muestras:>7} | "
+            f"{item.speedup_prom:>11.2f}x | "
+            f"{item.speedup_mediana:>14.2f}x | "
+            f"{item.diferencia_phi_prom:>14.4f} | "
+            f"{item.diferencia_phi_mediana:>17.4f}"
+        )
+
+
 if __name__ == "__main__":
     filas_benchmark = ejecutar_benchmark()
-    ruta = guardar_reporte(
+    resumenes = resumir_benchmark(filas_benchmark)
+
+    ruta_detalle = guardar_reporte(
         filas_benchmark,
         Path("review") / "benchmarks",
     )
+    ruta_resumen = guardar_resumen(
+        resumenes,
+        Path("review") / "benchmarks",
+    )
+
     imprimir_resumen(filas_benchmark)
-    print(f"\nReporte guardado en: {ruta}")
+    imprimir_tabla_agregada(resumenes)
+    print(f"\nReporte detalle guardado en: {ruta_detalle}")
+    print(f"Reporte resumen guardado en: {ruta_resumen}")

@@ -65,7 +65,13 @@ Genera un CSV en:
 
 `review/benchmarks/geometric_vs_fuerza_bruta.csv`
 
-con tiempos, speedup y diferencia de phi por tamano de red.
+con tiempos, speedup y diferencia de phi por corrida (multi-semilla).
+
+Tambien genera:
+
+`review/benchmarks/geometric_vs_fuerza_bruta_resumen.csv`
+
+con promedio y mediana de speedup y `|delta phi|` por tamano de red.
 
 ## 8. Estructura principal
 
