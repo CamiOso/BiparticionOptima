@@ -28,6 +28,8 @@ class Geometric(SIA):
         self.distancia_metrica = seleccionar_emd()
         self._beam_top_k = 12
         self._max_candidatos_costo_cero = 32
+        self._max_seeds_refinamiento = 6
+        self._max_iter_refinamiento = 24
         self._cache_particiones: dict[
             tuple[tuple[int, ...], tuple[int, ...]],
             tuple[float, np.ndarray],
@@ -179,6 +181,7 @@ class Geometric(SIA):
             subalcance=(),
             submecanismo=(),
         )
+        ranking_inicial: list[_ResultadoParticion] = []
 
         candidatos = self._expandir_candidatos_vecindad(
             mascaras_base=candidatos_base,
@@ -190,6 +193,14 @@ class Geometric(SIA):
 
         for subalcance, submecanismo in candidatos:
             perdida, distribucion = self._evaluar_particion(subalcance, submecanismo)
+            ranking_inicial.append(
+                _ResultadoParticion(
+                    perdida=perdida,
+                    distribucion=distribucion,
+                    subalcance=subalcance,
+                    submecanismo=submecanismo,
+                )
+            )
             if perdida < mejor_resultado.perdida:
                 mejor_resultado = _ResultadoParticion(
                     perdida=perdida,
@@ -198,7 +209,101 @@ class Geometric(SIA):
                     submecanismo=submecanismo,
                 )
 
+        ranking_inicial.sort(key=lambda item: item.perdida)
+        semillas_refinar = ranking_inicial[: self._max_seeds_refinamiento]
+        for semilla in semillas_refinar:
+            refinado = self._refinar_local_desacoplado(
+                semilla,
+                alcance_total,
+                mecanismo_total,
+            )
+            if refinado.perdida < mejor_resultado.perdida:
+                mejor_resultado = refinado
+
         return mejor_resultado
+
+    def _refinar_local_desacoplado(
+        self,
+        inicio: _ResultadoParticion,
+        alcance_total: tuple[int, ...],
+        mecanismo_total: tuple[int, ...],
+    ) -> _ResultadoParticion:
+        actual = inicio
+        mejor_global = inicio
+
+        for _ in range(self._max_iter_refinamiento):
+            vecinos = self._vecinos_desacoplados(
+                actual.subalcance,
+                actual.submecanismo,
+                alcance_total,
+                mecanismo_total,
+            )
+            if not vecinos:
+                break
+
+            mejor_vecino = actual
+            for subalcance, submecanismo in vecinos:
+                perdida, distribucion = self._evaluar_particion(subalcance, submecanismo)
+                if perdida < mejor_vecino.perdida:
+                    mejor_vecino = _ResultadoParticion(
+                        perdida=perdida,
+                        distribucion=distribucion,
+                        subalcance=subalcance,
+                        submecanismo=submecanismo,
+                    )
+
+            if mejor_vecino.perdida + 1e-12 >= actual.perdida:
+                break
+
+            actual = mejor_vecino
+            if actual.perdida < mejor_global.perdida:
+                mejor_global = actual
+
+        return mejor_global
+
+    def _vecinos_desacoplados(
+        self,
+        subalcance: tuple[int, ...],
+        submecanismo: tuple[int, ...],
+        alcance_total: tuple[int, ...],
+        mecanismo_total: tuple[int, ...],
+    ) -> list[tuple[tuple[int, ...], tuple[int, ...]]]:
+        vecinos: list[tuple[tuple[int, ...], tuple[int, ...]]] = []
+        vistos: set[tuple[tuple[int, ...], tuple[int, ...]]] = set()
+
+        alcance_set = set(subalcance)
+        mecanismo_set = set(submecanismo)
+
+        def agregar(cand_alcance: tuple[int, ...], cand_mecanismo: tuple[int, ...]) -> None:
+            if not cand_alcance and not cand_mecanismo:
+                return
+            if cand_alcance == alcance_total and cand_mecanismo == mecanismo_total:
+                return
+            clave = (cand_alcance, cand_mecanismo)
+            if clave in vistos:
+                return
+            vistos.add(clave)
+            vecinos.append(clave)
+
+        for nodo in alcance_total:
+            nuevo_set = set(alcance_set)
+            if nodo in nuevo_set:
+                nuevo_set.remove(nodo)
+            else:
+                nuevo_set.add(nodo)
+            cand_alcance = tuple(v for v in alcance_total if v in nuevo_set)
+            agregar(cand_alcance, submecanismo)
+
+        for nodo in mecanismo_total:
+            nuevo_set = set(mecanismo_set)
+            if nodo in nuevo_set:
+                nuevo_set.remove(nodo)
+            else:
+                nuevo_set.add(nodo)
+            cand_mecanismo = tuple(v for v in mecanismo_total if v in nuevo_set)
+            agregar(subalcance, cand_mecanismo)
+
+        return vecinos
 
     def _seleccionar_mascaras_base(
         self,
