@@ -6,6 +6,7 @@ from src.modelos.base.aplicacion import aplicacion
 from src.modelos.nucleo.ncubo import NCube
 from src.modelos.nucleo.sistema import Sistema
 from src.modelos.enumeraciones.distancia import MetricDistance
+from src.modelos.enumeraciones.geometric_mode import GeometricMode
 from src.modelos.enumeraciones.notacion import Notation
 from src.modelos.enumeraciones.emd_temporal import TimeEMD
 from src.intermedios.registro import SafeLogger
@@ -44,7 +45,8 @@ def iniciar() -> None:
     print(
         "Application singleton -> "
         f"pagina: {aplicacion.pagina_red_muestra}, "
-        f"distancia: {aplicacion.distancia_metrica}."
+        f"distancia: {aplicacion.distancia_metrica}, "
+        f"modo geometrico: {aplicacion.modo_geometrico}."
     )
 
     estado_inicial = "1000"
@@ -91,14 +93,25 @@ def iniciar() -> None:
     )
     print(f"Q-Nodes demo ->\n{resultado_q}")
 
-    estrategia_geometrica = Geometric(tpm)
-    resultado_geometrica = estrategia_geometrica.aplicar_estrategia(
+    aplicacion.set_modo_geometrico(GeometricMode.STRICT)
+    estrategia_geometrica_estricta = Geometric(tpm)
+    resultado_geometrica_estricta = estrategia_geometrica_estricta.aplicar_estrategia(
         estado_inicial=estado_inicial,
         condicion="1111",
         alcance="1111",
         mecanismo="1111",
     )
-    print(f"Geometric demo ->\n{resultado_geometrica}")
+    print(f"Geometric strict demo ->\n{resultado_geometrica_estricta}")
+
+    aplicacion.set_modo_geometrico(GeometricMode.REFINED)
+    estrategia_geometrica_refinada = Geometric(tpm)
+    resultado_geometrica_refinada = estrategia_geometrica_refinada.aplicar_estrategia(
+        estado_inicial=estado_inicial,
+        condicion="1111",
+        alcance="1111",
+        mecanismo="1111",
+    )
+    print(f"Geometric refined demo ->\n{resultado_geometrica_refinada}")
 
     cubo_demo = NCube(
         indice=0,

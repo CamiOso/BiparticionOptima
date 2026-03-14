@@ -49,6 +49,10 @@ Esto ejecuta `src/main.py` y muestra una demo de:
 - `QNodos` (version submodular con memoizacion)
 - `Geometric` (busqueda sobre hipercubo con tabla de costos recursiva)
 
+`Geometric` soporta dos modos:
+- `estricto`: usa solo la tabla recursiva y seleccion geometrica base. Este es el modo que conserva la lectura teorica de complejidad `O(n·2^n)`.
+- `refinado`: agrega refinamiento local y restarts adaptativos para mejorar precision empirica frente a `FuerzaBruta`.
+
 ## 6. Correr pruebas
 
 ```bash
@@ -72,6 +76,8 @@ Tambien genera:
 `review/benchmarks/geometric_vs_fuerza_bruta_resumen.csv`
 
 con promedio y mediana de speedup y `|delta phi|` por tamano de red.
+
+El benchmark actual corre `Geometric` en modo `refinado`.
 
 ## 8. Estructura principal
 
@@ -103,6 +109,7 @@ review/benchmarks/ # Scripts y salidas de benchmark
 - Carpeta y modulos en espanol.
 - Estrategias funcionales con pruebas automatizadas.
 - Estrategia `Geometric` integrada y benchmark reproducible.
+- `Geometric` separado en modo `estricto` y `refinado`.
 - `SIA` ya aplica `condicion`, `alcance` y `mecanismo` al preparar subsistema.
 - `QNodos` ya usa una logica submodular con memoizacion.
 - `Phi` usa `PyPhi` cuando esta disponible; si no, usa ruta heuristica.

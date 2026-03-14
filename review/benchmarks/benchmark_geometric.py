@@ -9,6 +9,7 @@ from pathlib import Path
 import numpy as np
 
 from src.estrategias.fuerza_bruta import FuerzaBruta
+from src.modelos.enumeraciones.geometric_mode import GeometricMode
 from src.strategies.geometric import Geometric
 
 
@@ -74,7 +75,7 @@ def ejecutar_benchmark() -> list[FilaBenchmark]:
             mascara = "1" * nodos
 
             fuerza_bruta = FuerzaBruta(tpm)
-            geometric = Geometric(tpm)
+            geometric = Geometric(tpm, mode=GeometricMode.REFINED)
 
             tiempo_fb, phi_fb = _medir_estrategia(fuerza_bruta, estado, mascara)
             tiempo_geo, phi_geo = _medir_estrategia(geometric, estado, mascara)

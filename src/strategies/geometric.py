@@ -8,7 +8,9 @@ from src.constantes.models import GEOMETRIC_LABEL
 from src.funciones.formato import fmt_biparticion
 from src.funciones.iit import seleccionar_emd
 from src.funciones.particiones import biparticiones
+from src.modelos.base.aplicacion import aplicacion
 from src.modelos.base.sia import SIA
+from src.modelos.enumeraciones.geometric_mode import GeometricMode
 from src.modelos.nucleo.solucion import Solucion
 
 
@@ -23,9 +25,10 @@ class _ResultadoParticion:
 class Geometric(SIA):
     """Estrategia geometrica sobre hipercubo para aproximar la MIP en O(n*2^n)."""
 
-    def __init__(self, tpm: np.ndarray) -> None:
+    def __init__(self, tpm: np.ndarray, mode: GeometricMode | str | None = None) -> None:
         super().__init__(tpm)
         self.distancia_metrica = seleccionar_emd()
+        self.mode = self._resolver_modo(mode)
         self._beam_top_k = 12
         self._max_candidatos_costo_cero = 32
         self._max_seeds_refinamiento = 6
@@ -68,12 +71,14 @@ class Geometric(SIA):
                 particion="NO-PARTITION",
             )
 
-        # En sistemas pequenos usamos solucion exacta para validar equivalencia con fuerza bruta.
         n_nodos = len(set(alcance_total) | set(mecanismo_total))
-        if n_nodos <= 5:
-            mejor = self._resolver_exacto(alcance_total, mecanismo_total)
+        if self.mode == GeometricMode.STRICT.value:
+            mejor = self._resolver_geometrico_estricto(alcance_total, mecanismo_total)
         else:
-            mejor = self._resolver_geometrico(alcance_total, mecanismo_total)
+            if n_nodos <= 5:
+                mejor = self._resolver_exacto(alcance_total, mecanismo_total)
+            else:
+                mejor = self._resolver_geometrico_refinado(alcance_total, mecanismo_total)
 
         return Solucion(
             estrategia=GEOMETRIC_LABEL,
@@ -88,6 +93,15 @@ class Geometric(SIA):
                 mecanismo_total,
             ),
         )
+
+    def _resolver_modo(self, mode: GeometricMode | str | None) -> str:
+        if isinstance(mode, GeometricMode):
+            return mode.value
+        if isinstance(mode, str):
+            if mode not in {GeometricMode.STRICT.value, GeometricMode.REFINED.value}:
+                raise ValueError(f"Modo geometrico invalido: {mode}")
+            return mode
+        return aplicacion.modo_geometrico
 
     def _tpm_a_tensores_elementales(self) -> tuple[np.ndarray, ...]:
         """Representa cada n-cubo del subsistema como tensor elemental."""
@@ -121,17 +135,45 @@ class Geometric(SIA):
                 )
         return mejor
 
-    def _resolver_geometrico(
+    def _resolver_geometrico_estricto(
         self,
         alcance_total: tuple[int, ...],
         mecanismo_total: tuple[int, ...],
     ) -> _ResultadoParticion:
+        nodos, total_mascaras, costos_locales, candidatos = self._precalcular_busqueda_geometrica(
+            alcance_total,
+            mecanismo_total,
+        )
+
+        mejor_resultado = _ResultadoParticion(
+            perdida=float("inf"),
+            distribucion=self.sia_dists_marginales.copy(),
+            subalcance=(),
+            submecanismo=(),
+        )
+
+        for subalcance, submecanismo in candidatos:
+            perdida, distribucion = self._evaluar_particion(subalcance, submecanismo)
+            if perdida < mejor_resultado.perdida:
+                mejor_resultado = _ResultadoParticion(
+                    perdida=perdida,
+                    distribucion=distribucion,
+                    subalcance=subalcance,
+                    submecanismo=submecanismo,
+                )
+
+        return mejor_resultado
+
+    def _precalcular_busqueda_geometrica(
+        self,
+        alcance_total: tuple[int, ...],
+        mecanismo_total: tuple[int, ...],
+    ) -> tuple[list[int], int, np.ndarray, list[tuple[tuple[int, ...], tuple[int, ...]]]]:
         nodos = sorted(set(alcance_total) | set(mecanismo_total))
         total_mascaras = 1 << len(nodos)
 
         costos = np.full(total_mascaras, np.inf, dtype=np.float64)
         costos_locales = np.full(total_mascaras, np.inf, dtype=np.float64)
-        predecesor = np.full(total_mascaras, -1, dtype=np.int32)
 
         costos[0] = 0.0
         candidatos_costo_cero: set[int] = set()
@@ -158,7 +200,6 @@ class Geometric(SIA):
                 costo = costos[anterior] + gamma * perdida_local
                 if costo < costos[mascara]:
                     costos[mascara] = costo
-                    predecesor[mascara] = anterior
                 bits ^= lsb
 
         if not candidatos_costo_cero:
@@ -180,14 +221,6 @@ class Geometric(SIA):
             total_mascaras=total_mascaras,
         )
 
-        mejor_resultado = _ResultadoParticion(
-            perdida=float("inf"),
-            distribucion=self.sia_dists_marginales.copy(),
-            subalcance=(),
-            submecanismo=(),
-        )
-        ranking_inicial: list[_ResultadoParticion] = []
-
         candidatos = self._expandir_candidatos_vecindad(
             mascaras_base=candidatos_base,
             nodos=nodos,
@@ -195,17 +228,25 @@ class Geometric(SIA):
             mecanismo_total=mecanismo_total,
             total_mascaras=total_mascaras,
         )
+        return nodos, total_mascaras, costos_locales, candidatos
 
+    def _resolver_geometrico_refinado(
+        self,
+        alcance_total: tuple[int, ...],
+        mecanismo_total: tuple[int, ...],
+    ) -> _ResultadoParticion:
+        nodos, total_mascaras, costos_locales, candidatos = self._precalcular_busqueda_geometrica(
+            alcance_total,
+            mecanismo_total,
+        )
+        mejor_resultado = _ResultadoParticion(
+            perdida=float("inf"),
+            distribucion=self.sia_dists_marginales.copy(),
+            subalcance=(),
+            submecanismo=(),
+        )
         for subalcance, submecanismo in candidatos:
             perdida, distribucion = self._evaluar_particion(subalcance, submecanismo)
-            ranking_inicial.append(
-                _ResultadoParticion(
-                    perdida=perdida,
-                    distribucion=distribucion,
-                    subalcance=subalcance,
-                    submecanismo=submecanismo,
-                )
-            )
             if perdida < mejor_resultado.perdida:
                 mejor_resultado = _ResultadoParticion(
                     perdida=perdida,
@@ -213,6 +254,7 @@ class Geometric(SIA):
                     subalcance=subalcance,
                     submecanismo=submecanismo,
                 )
+        ranking_inicial = self._ranking_desde_cache()
 
         ranking_inicial.sort(key=lambda item: item.perdida)
         semillas_refinar = ranking_inicial[: self._max_seeds_refinamiento]
@@ -298,6 +340,26 @@ class Geometric(SIA):
                     mejor_resultado = refinado
 
         return mejor_resultado
+
+    def _ranking_desde_cache(self) -> list[_ResultadoParticion]:
+        ranking: list[_ResultadoParticion] = []
+        assert self.sia_subsistema is not None
+        alcance_total = tuple(int(v) for v in self.sia_subsistema.indices_ncubos.tolist())
+        mecanismo_total = tuple(int(v) for v in self.sia_subsistema.dims_ncubos.tolist())
+        for (subalcance, submecanismo), (perdida, distribucion) in self._cache_particiones.items():
+            if not subalcance and not submecanismo:
+                continue
+            if subalcance == alcance_total and submecanismo == mecanismo_total:
+                continue
+            ranking.append(
+                _ResultadoParticion(
+                    perdida=perdida,
+                    distribucion=distribucion,
+                    subalcance=subalcance,
+                    submecanismo=submecanismo,
+                )
+            )
+        return ranking
 
     def _generar_semillas_aleatorias(self, total_mascaras: int, cantidad: int) -> list[int]:
         if total_mascaras <= 2 or cantidad <= 0:
