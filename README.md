@@ -139,7 +139,18 @@ review/notas/      # Notas tecnicas e informe final
 - `QNodos` ya usa una logica submodular con memoizacion.
 - `Phi` usa `PyPhi` cuando esta disponible; si no, usa ruta heuristica.
 
-## 13. Siguiente objetivo
-- analisis completo de red en `FuerzaBruta` (candidatos/subsistemas/reporte),
-- paridad avanzada de `Phi` (causa/efecto y repertorios),
-- utilidades IIT restantes para equivalencia total.
+## 13. Comandos rapidos
+
+```bash
+python exec.py --estrategia geometric --modo-geometric refinado
+PYTHONPATH=. python -m pytest -q
+PYTHONPATH=. python review/benchmarks/benchmark_geometric.py
+```
+
+## 14. Estado de cierre
+
+Proyecto finalizado para el alcance definido:
+
+- estrategias implementadas y funcionales,
+- evaluacion experimental y reportes generados,
+- documentacion tecnica y de resultados lista para entrega.
