@@ -69,11 +69,19 @@ Esto ejecuta `src/main.py` y muestra una demo de:
 PYTHONPATH=. python -m pytest -q
 ```
 
+Para medir cobertura localmente (mismo criterio que CI):
+
+```bash
+PYTHONPATH=. pytest -q --cov=src --cov-report=term-missing --cov-fail-under=70
+```
+
 Tambien se incluyen pruebas de CLI (`tests/test_cli.py`) para validar:
 
 - seleccion de estrategia con `--estrategia`,
 - seleccion de modo geometrico con `--modo-geometric`,
 - manejo de argumentos invalidos.
+
+CI valida automaticamente pruebas + cobertura minima del 70%.
 
 ## 7. Benchmark de rendimiento (Geometric estricto/refinado vs FuerzaBruta)
 
