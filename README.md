@@ -59,7 +59,7 @@ Esto ejecuta `src/main.py` y muestra una demo de:
 PYTHONPATH=. python -m pytest -q
 ```
 
-## 7. Benchmark de rendimiento (Geometric vs FuerzaBruta)
+## 7. Benchmark de rendimiento (Geometric estricto/refinado vs FuerzaBruta)
 
 ```bash
 PYTHONPATH=. python review/benchmarks/benchmark_geometric.py
@@ -69,7 +69,11 @@ Genera un CSV en:
 
 `review/benchmarks/geometric_vs_fuerza_bruta.csv`
 
-con tiempos, speedup y diferencia de phi por corrida (multi-semilla).
+con tiempos, speedup y diferencia de phi por corrida (multi-semilla) para:
+
+- `FuerzaBruta`
+- `Geometric` en modo `estricto`
+- `Geometric` en modo `refinado`
 
 Tambien genera:
 
@@ -77,9 +81,13 @@ Tambien genera:
 
 con promedio y mediana de speedup y `|delta phi|` por tamano de red.
 
-El benchmark actual corre `Geometric` en modo `refinado`.
+## 8. Nota tecnica de complejidad
 
-## 8. Estructura principal
+La justificacion formal del modo `estricto` y la distincion frente al modo `refinado` estan en:
+
+`review/notas/complejidad_geometric.md`
+
+## 9. Estructura principal
 
 ```text
 src/
@@ -94,9 +102,10 @@ src/
 exec.py            # Entry point
 tests/             # Suite de pruebas
 review/benchmarks/ # Scripts y salidas de benchmark
+review/notas/      # Notas tecnicas del algoritmo
 ```
 
-## 9. Flujo recomendado de trabajo
+## 10. Flujo recomendado de trabajo
 
 1. Crear/activar entorno virtual.
 2. Instalar dependencias.
@@ -104,7 +113,7 @@ review/benchmarks/ # Scripts y salidas de benchmark
 4. Ejecutar `PYTHONPATH=. python -m pytest -q` antes de cada commit.
 5. Hacer cambios pequenos, validar, y luego commit/push.
 
-## 10. Estado actual
+## 11. Estado actual
 
 - Carpeta y modulos en espanol.
 - Estrategias funcionales con pruebas automatizadas.
@@ -114,7 +123,7 @@ review/benchmarks/ # Scripts y salidas de benchmark
 - `QNodos` ya usa una logica submodular con memoizacion.
 - `Phi` usa `PyPhi` cuando esta disponible; si no, usa ruta heuristica.
 
-## 11. Siguiente objetivo
+## 12. Siguiente objetivo
 - analisis completo de red en `FuerzaBruta` (candidatos/subsistemas/reporte),
 - paridad avanzada de `Phi` (causa/efecto y repertorios),
 - utilidades IIT restantes para equivalencia total.
