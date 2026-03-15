@@ -28,11 +28,79 @@ def validar_bitstring(value: str) -> None:
         raise ValueError(ERROR_INVALID_BITSTRING)
 
 
-def iniciar() -> None:
+def _ejecutar_estrategia(
+    estrategia: str,
+    tpm: np.ndarray,
+    estado_inicial: str,
+) -> None:
+    estrategia = estrategia.lower()
+
+    if estrategia in {"fuerza_bruta", "bruteforce", "fuerzabruta"}:
+        solver = FuerzaBruta(tpm)
+        resultado = solver.aplicar_estrategia(
+            estado_inicial=estado_inicial,
+            condicion="1111",
+            alcance="1111",
+            mecanismo="1111",
+        )
+        print(f"FuerzaBruta ->\n{resultado}")
+        print(
+            "Perdida -> "
+            f"{resultado.perdida:.4f} | "
+            f"subsistema={resultado.distribucion_subsistema.tolist()} vs "
+            f"particion={resultado.distribucion_particion.tolist()}"
+        )
+        return
+
+    if estrategia == "phi":
+        solver = Phi(tpm)
+        resultado = solver.aplicar_estrategia(
+            estado_inicial=estado_inicial,
+            condicion="1111",
+            alcance="1111",
+            mecanismo="1111",
+        )
+        print(f"Phi ->\n{resultado}")
+        return
+
+    if estrategia in {"qnodos", "q_nodes", "qnodes"}:
+        solver = QNodos(tpm)
+        resultado = solver.aplicar_estrategia(
+            estado_inicial=estado_inicial,
+            condicion="1111",
+            alcance="1111",
+            mecanismo="1111",
+        )
+        print(f"Q-Nodos ->\n{resultado}")
+        return
+
+    if estrategia == "geometric":
+        solver = Geometric(tpm)
+        resultado = solver.aplicar_estrategia(
+            estado_inicial=estado_inicial,
+            condicion="1111",
+            alcance="1111",
+            mecanismo="1111",
+        )
+        print(f"Geometric ({aplicacion.modo_geometrico}) ->\n{resultado}")
+        return
+
+    raise ValueError(f"Estrategia no soportada: {estrategia}")
+
+
+def iniciar(
+    estrategia: str = "todas",
+    modo_geometric: str | None = None,
+) -> None:
     """Orquestador inicial del proyecto."""
     logger.info("Inicio de ejecucion en main.iniciar")
     validar_bitstring("1000")
     aplicacion.set_pagina_red_muestra("A")
+    if modo_geometric is not None:
+        if modo_geometric not in {GeometricMode.STRICT.value, GeometricMode.REFINED.value}:
+            raise ValueError(f"Modo geometrico no soportado: {modo_geometric}")
+        aplicacion.modo_geometrico = modo_geometric
+
     print(
         f"{PROJECT_NAME} v{PROJECT_VERSION}: proyecto iniciado correctamente con estrategia base {BRUTEFORCE_LABEL}."
     )
@@ -60,58 +128,18 @@ def iniciar() -> None:
     dist_marginal = sistema.distribucion_marginal()
     print(f"Sistema demo -> distribucion marginal: {dist_marginal.tolist()}")
 
-    estrategia = FuerzaBruta(tpm)
-    resultado = estrategia.aplicar_estrategia(
-        estado_inicial=estado_inicial,
-        condicion="1111",
-        alcance="1111",
-        mecanismo="1111",
-    )
-    print(f"SIA demo ->\n{resultado}")
-    print(
-        "Perdida demo -> "
-        f"{resultado.perdida:.4f} | "
-        f"subsistema={resultado.distribucion_subsistema.tolist()} vs "
-        f"particion={resultado.distribucion_particion.tolist()}"
-    )
+    if estrategia == "todas":
+        _ejecutar_estrategia("fuerza_bruta", tpm, estado_inicial)
+        _ejecutar_estrategia("phi", tpm, estado_inicial)
+        _ejecutar_estrategia("qnodos", tpm, estado_inicial)
 
-    estrategia_phi = Phi(tpm)
-    resultado_phi = estrategia_phi.aplicar_estrategia(
-        estado_inicial=estado_inicial,
-        condicion="1111",
-        alcance="1111",
-        mecanismo="1111",
-    )
-    print(f"Phi demo ->\n{resultado_phi}")
+        aplicacion.set_modo_geometrico(GeometricMode.STRICT)
+        _ejecutar_estrategia("geometric", tpm, estado_inicial)
 
-    estrategia_q = QNodos(tpm)
-    resultado_q = estrategia_q.aplicar_estrategia(
-        estado_inicial=estado_inicial,
-        condicion="1111",
-        alcance="1111",
-        mecanismo="1111",
-    )
-    print(f"Q-Nodes demo ->\n{resultado_q}")
-
-    aplicacion.set_modo_geometrico(GeometricMode.STRICT)
-    estrategia_geometrica_estricta = Geometric(tpm)
-    resultado_geometrica_estricta = estrategia_geometrica_estricta.aplicar_estrategia(
-        estado_inicial=estado_inicial,
-        condicion="1111",
-        alcance="1111",
-        mecanismo="1111",
-    )
-    print(f"Geometric strict demo ->\n{resultado_geometrica_estricta}")
-
-    aplicacion.set_modo_geometrico(GeometricMode.REFINED)
-    estrategia_geometrica_refinada = Geometric(tpm)
-    resultado_geometrica_refinada = estrategia_geometrica_refinada.aplicar_estrategia(
-        estado_inicial=estado_inicial,
-        condicion="1111",
-        alcance="1111",
-        mecanismo="1111",
-    )
-    print(f"Geometric refined demo ->\n{resultado_geometrica_refinada}")
+        aplicacion.set_modo_geometrico(GeometricMode.REFINED)
+        _ejecutar_estrategia("geometric", tpm, estado_inicial)
+    else:
+        _ejecutar_estrategia(estrategia, tpm, estado_inicial)
 
     cubo_demo = NCube(
         indice=0,

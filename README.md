@@ -43,6 +43,16 @@ Nota:
 python exec.py
 ```
 
+Para ejecutar una estrategia especifica:
+
+```bash
+python exec.py --estrategia geometric --modo-geometric refinado
+python exec.py --estrategia geometric --modo-geometric estricto
+python exec.py --estrategia fuerza_bruta
+python exec.py --estrategia phi
+python exec.py --estrategia qnodos
+```
+
 Esto ejecuta `src/main.py` y muestra una demo de:
 - `FuerzaBruta`
 - `Phi` (PyPhi real si esta disponible, o heuristica)
