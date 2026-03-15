@@ -87,7 +87,13 @@ La justificacion formal del modo `estricto` y la distincion frente al modo `refi
 
 `review/notas/complejidad_geometric.md`
 
-## 9. Estructura principal
+## 9. Informe final de resultados
+
+Resumen listo para entrega (metodologia, tablas y conclusiones):
+
+`review/notas/informe_final_geometric.md`
+
+## 10. Estructura principal
 
 ```text
 src/
@@ -102,10 +108,10 @@ src/
 exec.py            # Entry point
 tests/             # Suite de pruebas
 review/benchmarks/ # Scripts y salidas de benchmark
-review/notas/      # Notas tecnicas del algoritmo
+review/notas/      # Notas tecnicas e informe final
 ```
 
-## 10. Flujo recomendado de trabajo
+## 11. Flujo recomendado de trabajo
 
 1. Crear/activar entorno virtual.
 2. Instalar dependencias.
@@ -113,7 +119,7 @@ review/notas/      # Notas tecnicas del algoritmo
 4. Ejecutar `PYTHONPATH=. python -m pytest -q` antes de cada commit.
 5. Hacer cambios pequenos, validar, y luego commit/push.
 
-## 11. Estado actual
+## 12. Estado actual
 
 - Carpeta y modulos en espanol.
 - Estrategias funcionales con pruebas automatizadas.
@@ -123,7 +129,7 @@ review/notas/      # Notas tecnicas del algoritmo
 - `QNodos` ya usa una logica submodular con memoizacion.
 - `Phi` usa `PyPhi` cuando esta disponible; si no, usa ruta heuristica.
 
-## 12. Siguiente objetivo
+## 13. Siguiente objetivo
 - analisis completo de red en `FuerzaBruta` (candidatos/subsistemas/reporte),
 - paridad avanzada de `Phi` (causa/efecto y repertorios),
 - utilidades IIT restantes para equivalencia total.
