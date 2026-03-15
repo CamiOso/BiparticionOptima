@@ -69,6 +69,12 @@ Esto ejecuta `src/main.py` y muestra una demo de:
 PYTHONPATH=. python -m pytest -q
 ```
 
+Tambien se incluyen pruebas de CLI (`tests/test_cli.py`) para validar:
+
+- seleccion de estrategia con `--estrategia`,
+- seleccion de modo geometrico con `--modo-geometric`,
+- manejo de argumentos invalidos.
+
 ## 7. Benchmark de rendimiento (Geometric estricto/refinado vs FuerzaBruta)
 
 ```bash
@@ -117,6 +123,7 @@ src/
 	main.py          # Orquestador de ejecucion
 exec.py            # Entry point
 tests/             # Suite de pruebas
+.github/workflows/ # CI en GitHub Actions
 review/benchmarks/ # Scripts y salidas de benchmark
 review/notas/      # Notas tecnicas e informe final
 ```
