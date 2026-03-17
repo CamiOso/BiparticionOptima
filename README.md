@@ -61,6 +61,10 @@ Notas de CLI:
 - La TPM esperada debe cumplir forma `2^n x n` para ese `n`.
 - `--output-json` exporta resultados de la corrida en formato JSON.
 
+Muestras incluidas en `src/.samples/`:
+
+- `N4A.csv`, `N5A.csv`, `N6A.csv`, `N7A.csv`, `N8A.csv`
+
 Esto ejecuta `src/main.py` y muestra una demo de:
 - `FuerzaBruta`
 - `Phi` (PyPhi real si esta disponible, o heuristica)
