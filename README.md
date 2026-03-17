@@ -51,7 +51,15 @@ python exec.py --estrategia geometric --modo-geometric estricto
 python exec.py --estrategia fuerza_bruta
 python exec.py --estrategia phi
 python exec.py --estrategia qnodos
+python exec.py --estrategia geometric --estado-inicial 1000
+python exec.py --estrategia geometric --modo-geometric refinado --output-json review/salidas/geometric_1000.json
 ```
+
+Notas de CLI:
+
+- `--estado-inicial` define la cantidad de nodos (longitud del bitstring).
+- La TPM esperada debe cumplir forma `2^n x n` para ese `n`.
+- `--output-json` exporta resultados de la corrida en formato JSON.
 
 Esto ejecuta `src/main.py` y muestra una demo de:
 - `FuerzaBruta`

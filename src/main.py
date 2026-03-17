@@ -1,3 +1,6 @@
+import json
+from pathlib import Path
+
 from src.constantes.base import PROJECT_NAME, PROJECT_VERSION
 from src.constantes.error import ERROR_EMPTY_INPUT, ERROR_INVALID_BITSTRING
 from src.constantes.models import BRUTEFORCE_LABEL
@@ -28,20 +31,32 @@ def validar_bitstring(value: str) -> None:
         raise ValueError(ERROR_INVALID_BITSTRING)
 
 
+def _solucion_a_dict(resultado) -> dict[str, object]:
+    return {
+        "estrategia": resultado.estrategia,
+        "estado_inicial": resultado.estado_inicial,
+        "perdida": float(resultado.perdida),
+        "particion": resultado.particion,
+        "distribucion_subsistema": resultado.distribucion_subsistema.tolist(),
+        "distribucion_particion": resultado.distribucion_particion.tolist(),
+    }
+
+
 def _ejecutar_estrategia(
     estrategia: str,
     tpm: np.ndarray,
     estado_inicial: str,
-) -> None:
+    mascara: str,
+):
     estrategia = estrategia.lower()
 
     if estrategia in {"fuerza_bruta", "bruteforce", "fuerzabruta"}:
         solver = FuerzaBruta(tpm)
         resultado = solver.aplicar_estrategia(
             estado_inicial=estado_inicial,
-            condicion="1111",
-            alcance="1111",
-            mecanismo="1111",
+            condicion=mascara,
+            alcance=mascara,
+            mecanismo=mascara,
         )
         print(f"FuerzaBruta ->\n{resultado}")
         print(
@@ -50,40 +65,40 @@ def _ejecutar_estrategia(
             f"subsistema={resultado.distribucion_subsistema.tolist()} vs "
             f"particion={resultado.distribucion_particion.tolist()}"
         )
-        return
+        return "fuerza_bruta", resultado
 
     if estrategia == "phi":
         solver = Phi(tpm)
         resultado = solver.aplicar_estrategia(
             estado_inicial=estado_inicial,
-            condicion="1111",
-            alcance="1111",
-            mecanismo="1111",
+            condicion=mascara,
+            alcance=mascara,
+            mecanismo=mascara,
         )
         print(f"Phi ->\n{resultado}")
-        return
+        return "phi", resultado
 
     if estrategia in {"qnodos", "q_nodes", "qnodes"}:
         solver = QNodos(tpm)
         resultado = solver.aplicar_estrategia(
             estado_inicial=estado_inicial,
-            condicion="1111",
-            alcance="1111",
-            mecanismo="1111",
+            condicion=mascara,
+            alcance=mascara,
+            mecanismo=mascara,
         )
         print(f"Q-Nodos ->\n{resultado}")
-        return
+        return "qnodos", resultado
 
     if estrategia == "geometric":
         solver = Geometric(tpm)
         resultado = solver.aplicar_estrategia(
             estado_inicial=estado_inicial,
-            condicion="1111",
-            alcance="1111",
-            mecanismo="1111",
+            condicion=mascara,
+            alcance=mascara,
+            mecanismo=mascara,
         )
         print(f"Geometric ({aplicacion.modo_geometrico}) ->\n{resultado}")
-        return
+        return f"geometric_{aplicacion.modo_geometrico}", resultado
 
     raise ValueError(f"Estrategia no soportada: {estrategia}")
 
@@ -91,10 +106,12 @@ def _ejecutar_estrategia(
 def iniciar(
     estrategia: str = "todas",
     modo_geometric: str | None = None,
-) -> None:
+    estado_inicial: str = "1000",
+    output_json: str | None = None,
+) -> dict[str, object]:
     """Orquestador inicial del proyecto."""
     logger.info("Inicio de ejecucion en main.iniciar")
-    validar_bitstring("1000")
+    validar_bitstring(estado_inicial)
     aplicacion.set_pagina_red_muestra("A")
     if modo_geometric is not None:
         if modo_geometric not in {GeometricMode.STRICT.value, GeometricMode.REFINED.value}:
@@ -117,7 +134,7 @@ def iniciar(
         f"modo geometrico: {aplicacion.modo_geometrico}."
     )
 
-    estado_inicial = "1000"
+    mascara = "1" * len(estado_inicial)
     gestor = Gestor(estado_inicial=estado_inicial)
     tpm = gestor.cargar_red()
     logger.debug(f"TPM cargada con forma {tpm.shape}")
@@ -128,18 +145,28 @@ def iniciar(
     dist_marginal = sistema.distribucion_marginal()
     print(f"Sistema demo -> distribucion marginal: {dist_marginal.tolist()}")
 
+    resultados: dict[str, object] = {}
+
     if estrategia == "todas":
-        _ejecutar_estrategia("fuerza_bruta", tpm, estado_inicial)
-        _ejecutar_estrategia("phi", tpm, estado_inicial)
-        _ejecutar_estrategia("qnodos", tpm, estado_inicial)
+        clave, resultado = _ejecutar_estrategia("fuerza_bruta", tpm, estado_inicial, mascara)
+        resultados[clave] = _solucion_a_dict(resultado)
+
+        clave, resultado = _ejecutar_estrategia("phi", tpm, estado_inicial, mascara)
+        resultados[clave] = _solucion_a_dict(resultado)
+
+        clave, resultado = _ejecutar_estrategia("qnodos", tpm, estado_inicial, mascara)
+        resultados[clave] = _solucion_a_dict(resultado)
 
         aplicacion.set_modo_geometrico(GeometricMode.STRICT)
-        _ejecutar_estrategia("geometric", tpm, estado_inicial)
+        clave, resultado = _ejecutar_estrategia("geometric", tpm, estado_inicial, mascara)
+        resultados[clave] = _solucion_a_dict(resultado)
 
         aplicacion.set_modo_geometrico(GeometricMode.REFINED)
-        _ejecutar_estrategia("geometric", tpm, estado_inicial)
+        clave, resultado = _ejecutar_estrategia("geometric", tpm, estado_inicial, mascara)
+        resultados[clave] = _solucion_a_dict(resultado)
     else:
-        _ejecutar_estrategia(estrategia, tpm, estado_inicial)
+        clave, resultado = _ejecutar_estrategia(estrategia, tpm, estado_inicial, mascara)
+        resultados[clave] = _solucion_a_dict(resultado)
 
     cubo_demo = NCube(
         indice=0,
@@ -153,4 +180,20 @@ def iniciar(
         f"dims marginalizadas: {cubo_marginal.dims.tolist()}, "
         f"data: {cubo_marginal.data.tolist()}"
     )
+
+    payload = {
+        "estrategia_solicitada": estrategia,
+        "modo_geometric": aplicacion.modo_geometrico,
+        "estado_inicial": estado_inicial,
+        "archivo_tpm": str(gestor.archivo_tpm),
+        "resultados": resultados,
+    }
+
+    if output_json:
+        ruta = Path(output_json)
+        ruta.parent.mkdir(parents=True, exist_ok=True)
+        ruta.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+        print(f"Salida JSON guardada en: {ruta}")
+
     logger.info("Fin de ejecucion en main.iniciar")
+    return payload

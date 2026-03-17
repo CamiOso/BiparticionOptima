@@ -1,3 +1,4 @@
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -43,3 +44,32 @@ def test_cli_rejects_invalid_strategy() -> None:
 
     assert result.returncode != 0
     assert "invalid choice" in result.stderr
+
+
+def test_cli_rejects_invalid_estado_inicial() -> None:
+    result = _run_cli("--estrategia", "geometric", "--estado-inicial", "10a0")
+
+    assert result.returncode != 0
+    assert "cadena binaria" in result.stderr
+
+
+def test_cli_output_json_creates_file(tmp_path: Path) -> None:
+    output_path = tmp_path / "salida" / "resultado.json"
+    result = _run_cli(
+        "--estrategia",
+        "geometric",
+        "--modo-geometric",
+        "refinado",
+        "--estado-inicial",
+        "1000",
+        "--output-json",
+        str(output_path),
+    )
+
+    assert result.returncode == 0
+    assert output_path.exists()
+
+    data = json.loads(output_path.read_text(encoding="utf-8"))
+    assert data["estado_inicial"] == "1000"
+    assert "resultados" in data
+    assert "geometric_refinado" in data["resultados"]

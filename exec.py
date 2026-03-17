@@ -17,6 +17,16 @@ def _crear_parser() -> argparse.ArgumentParser:
         choices=["estricto", "refinado"],
         help="Modo de Geometric (solo aplica cuando la estrategia es geometric).",
     )
+    parser.add_argument(
+        "--estado-inicial",
+        default="1000",
+        help="Estado inicial binario del sistema (ej: 1000).",
+    )
+    parser.add_argument(
+        "--output-json",
+        default=None,
+        help="Ruta opcional para guardar resultados en JSON.",
+    )
     return parser
 
 
@@ -28,6 +38,8 @@ def main() -> None:
     iniciar(
         estrategia=args.estrategia,
         modo_geometric=args.modo_geometric,
+        estado_inicial=args.estado_inicial,
+        output_json=args.output_json,
     )
 
 
