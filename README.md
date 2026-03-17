@@ -34,7 +34,7 @@ pip install -r requirements.txt
 ```
 
 Nota:
-- `requirements.txt` contiene lo minimo para correr pruebas (`pytest`).
+- `requirements.txt` esta pinneado con versiones exactas para ejecucion reproducible.
 - Si quieres forzar modo `PyPhi` en la estrategia `Phi`, instala `pyphi` manualmente.
 
 ## 5. Ejecutar el proyecto

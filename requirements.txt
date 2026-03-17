@@ -1,6 +1,5 @@
-# Dependencias de ejecucion del proyecto.
-# Se iran agregando a medida que implementemos modulos.
-pandas
-openpyxl
-pytest
-pytest-cov
+# Dependencias fijadas para ejecucion reproducible.
+pandas==3.0.1
+openpyxl==3.1.5
+pytest==9.0.2
+pytest-cov==7.0.0
