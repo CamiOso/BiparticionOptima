@@ -60,6 +60,9 @@ Notas de CLI:
 - `--estado-inicial` define la cantidad de nodos (longitud del bitstring).
 - La TPM esperada debe cumplir forma `2^n x n` para ese `n`.
 - `--output-json` exporta resultados de la corrida en formato JSON.
+- El JSON incluye `elapsed_seconds` por estrategia ejecutada.
+
+Si no existe el CSV esperado para el tamano solicitado, el CLI muestra un error claro con la ruta faltante y las muestras disponibles.
 
 Muestras incluidas en `src/.samples/`:
 

@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+import time
 
 from src.constantes.base import PROJECT_NAME, PROJECT_VERSION
 from src.constantes.error import ERROR_EMPTY_INPUT, ERROR_INVALID_BITSTRING
@@ -31,7 +32,7 @@ def validar_bitstring(value: str) -> None:
         raise ValueError(ERROR_INVALID_BITSTRING)
 
 
-def _solucion_a_dict(resultado) -> dict[str, object]:
+def _solucion_a_dict(resultado, elapsed_seconds: float) -> dict[str, object]:
     return {
         "estrategia": resultado.estrategia,
         "estado_inicial": resultado.estado_inicial,
@@ -39,6 +40,7 @@ def _solucion_a_dict(resultado) -> dict[str, object]:
         "particion": resultado.particion,
         "distribucion_subsistema": resultado.distribucion_subsistema.tolist(),
         "distribucion_particion": resultado.distribucion_particion.tolist(),
+        "elapsed_seconds": elapsed_seconds,
     }
 
 
@@ -52,12 +54,14 @@ def _ejecutar_estrategia(
 
     if estrategia in {"fuerza_bruta", "bruteforce", "fuerzabruta"}:
         solver = FuerzaBruta(tpm)
+        inicio = time.perf_counter()
         resultado = solver.aplicar_estrategia(
             estado_inicial=estado_inicial,
             condicion=mascara,
             alcance=mascara,
             mecanismo=mascara,
         )
+        elapsed = time.perf_counter() - inicio
         print(f"FuerzaBruta ->\n{resultado}")
         print(
             "Perdida -> "
@@ -65,40 +69,46 @@ def _ejecutar_estrategia(
             f"subsistema={resultado.distribucion_subsistema.tolist()} vs "
             f"particion={resultado.distribucion_particion.tolist()}"
         )
-        return "fuerza_bruta", resultado
+        return "fuerza_bruta", resultado, elapsed
 
     if estrategia == "phi":
         solver = Phi(tpm)
+        inicio = time.perf_counter()
         resultado = solver.aplicar_estrategia(
             estado_inicial=estado_inicial,
             condicion=mascara,
             alcance=mascara,
             mecanismo=mascara,
         )
+        elapsed = time.perf_counter() - inicio
         print(f"Phi ->\n{resultado}")
-        return "phi", resultado
+        return "phi", resultado, elapsed
 
     if estrategia in {"qnodos", "q_nodes", "qnodes"}:
         solver = QNodos(tpm)
+        inicio = time.perf_counter()
         resultado = solver.aplicar_estrategia(
             estado_inicial=estado_inicial,
             condicion=mascara,
             alcance=mascara,
             mecanismo=mascara,
         )
+        elapsed = time.perf_counter() - inicio
         print(f"Q-Nodos ->\n{resultado}")
-        return "qnodos", resultado
+        return "qnodos", resultado, elapsed
 
     if estrategia == "geometric":
         solver = Geometric(tpm)
+        inicio = time.perf_counter()
         resultado = solver.aplicar_estrategia(
             estado_inicial=estado_inicial,
             condicion=mascara,
             alcance=mascara,
             mecanismo=mascara,
         )
+        elapsed = time.perf_counter() - inicio
         print(f"Geometric ({aplicacion.modo_geometrico}) ->\n{resultado}")
-        return f"geometric_{aplicacion.modo_geometrico}", resultado
+        return f"geometric_{aplicacion.modo_geometrico}", resultado, elapsed
 
     raise ValueError(f"Estrategia no soportada: {estrategia}")
 
@@ -148,25 +158,25 @@ def iniciar(
     resultados: dict[str, object] = {}
 
     if estrategia == "todas":
-        clave, resultado = _ejecutar_estrategia("fuerza_bruta", tpm, estado_inicial, mascara)
-        resultados[clave] = _solucion_a_dict(resultado)
+        clave, resultado, elapsed = _ejecutar_estrategia("fuerza_bruta", tpm, estado_inicial, mascara)
+        resultados[clave] = _solucion_a_dict(resultado, elapsed)
 
-        clave, resultado = _ejecutar_estrategia("phi", tpm, estado_inicial, mascara)
-        resultados[clave] = _solucion_a_dict(resultado)
+        clave, resultado, elapsed = _ejecutar_estrategia("phi", tpm, estado_inicial, mascara)
+        resultados[clave] = _solucion_a_dict(resultado, elapsed)
 
-        clave, resultado = _ejecutar_estrategia("qnodos", tpm, estado_inicial, mascara)
-        resultados[clave] = _solucion_a_dict(resultado)
+        clave, resultado, elapsed = _ejecutar_estrategia("qnodos", tpm, estado_inicial, mascara)
+        resultados[clave] = _solucion_a_dict(resultado, elapsed)
 
         aplicacion.set_modo_geometrico(GeometricMode.STRICT)
-        clave, resultado = _ejecutar_estrategia("geometric", tpm, estado_inicial, mascara)
-        resultados[clave] = _solucion_a_dict(resultado)
+        clave, resultado, elapsed = _ejecutar_estrategia("geometric", tpm, estado_inicial, mascara)
+        resultados[clave] = _solucion_a_dict(resultado, elapsed)
 
         aplicacion.set_modo_geometrico(GeometricMode.REFINED)
-        clave, resultado = _ejecutar_estrategia("geometric", tpm, estado_inicial, mascara)
-        resultados[clave] = _solucion_a_dict(resultado)
+        clave, resultado, elapsed = _ejecutar_estrategia("geometric", tpm, estado_inicial, mascara)
+        resultados[clave] = _solucion_a_dict(resultado, elapsed)
     else:
-        clave, resultado = _ejecutar_estrategia(estrategia, tpm, estado_inicial, mascara)
-        resultados[clave] = _solucion_a_dict(resultado)
+        clave, resultado, elapsed = _ejecutar_estrategia(estrategia, tpm, estado_inicial, mascara)
+        resultados[clave] = _solucion_a_dict(resultado, elapsed)
 
     cubo_demo = NCube(
         indice=0,

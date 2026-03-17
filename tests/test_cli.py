@@ -73,3 +73,13 @@ def test_cli_output_json_creates_file(tmp_path: Path) -> None:
     assert data["estado_inicial"] == "1000"
     assert "resultados" in data
     assert "geometric_refinado" in data["resultados"]
+    assert data["resultados"]["geometric_refinado"]["elapsed_seconds"] >= 0.0
+
+
+def test_cli_missing_sample_csv_has_clear_error() -> None:
+    # 9 nodos requiere N9A.csv, que no existe por defecto.
+    result = _run_cli("--estrategia", "geometric", "--estado-inicial", "000000000")
+
+    assert result.returncode != 0
+    assert "No se encontro la muestra TPM esperada" in result.stderr
+    assert "N9A.csv" in result.stderr

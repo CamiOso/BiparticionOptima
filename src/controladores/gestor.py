@@ -26,6 +26,14 @@ class Gestor:
         return self.archivo_tpm
 
     def cargar_red(self) -> np.ndarray:
+        if not self.archivo_tpm.exists():
+            disponibles = sorted(p.name for p in self.ruta_base.glob("N*A.csv"))
+            listado = ", ".join(disponibles) if disponibles else "(sin muestras disponibles)"
+            raise FileNotFoundError(
+                "No se encontro la muestra TPM esperada: "
+                f"{self.archivo_tpm}. "
+                f"Muestras disponibles en {self.ruta_base}: {listado}"
+            )
         return np.genfromtxt(self.archivo_tpm, delimiter=CSV_DELIMITER)
 
 
