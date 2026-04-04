@@ -98,6 +98,8 @@ Tambien se incluyen pruebas de CLI (`tests/test_cli.py`) para validar:
 
 CI valida automaticamente pruebas + cobertura minima del 70%.
 
+Referencia local verificada (2026-04-04): `39 passed, 1 skipped` y cobertura total `76.86%` con el comando anterior.
+
 ## 7. Benchmark de rendimiento (Geometric estricto/refinado vs FuerzaBruta)
 
 ```bash
