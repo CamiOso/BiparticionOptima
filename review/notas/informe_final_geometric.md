@@ -132,3 +132,43 @@ PYTHONPATH=. python review/benchmarks/ejemplo_3_variables.py
 
 - El flujo exacto para tamanos chicos se mantiene sin cambios (se sigue evaluando completo),
   preservando la compatibilidad con pruebas de regresion y comparaciones contra `FuerzaBruta`.
+
+## 10. Visualizaciones y cierre de entregables (Paso 11)
+
+Se agregaron artefactos visuales para reforzar la explicacion geometrica del sistema en 3 variables:
+
+- `review/salidas/hipercubo_3_variables.svg`
+- `review/salidas/proyecciones_3_variables.csv`
+- `review/salidas/adyacencia_hipercubo_3_variables.csv`
+
+Script reproducible:
+
+```bash
+PYTHONPATH=. python review/benchmarks/visualizacion_3_variables.py
+```
+
+Adicionalmente, se incorporo benchmark de comparacion antes/despues de la optimizacion del Paso 10:
+
+- detalle: `review/benchmarks/geometric_optimizacion_detalle.csv`
+- resumen: `review/benchmarks/geometric_optimizacion_resumen.csv`
+
+Script reproducible:
+
+```bash
+PYTHONPATH=. python review/benchmarks/benchmark_geometric_optimizacion.py
+```
+
+Resultados locales de referencia (2026-04-04):
+
+| nodos | speedup opt (prom) | delta phi (prom) |
+|---|---:|---:|
+| 9 | 1.05x | 0.006275 |
+| 10 | 1.22x | 0.000000 |
+
+Con esto, el proyecto entrega:
+
+- TPM y condicionamiento/marginalizacion,
+- descomposicion tensorial,
+- representacion geometrica (cubo/proyecciones/adyacencia),
+- identificacion de biparticion,
+- y evidencia experimental de optimizacion para escalado.

@@ -144,19 +144,53 @@ Salida principal generada:
 
 `review/salidas/tabla_costos_3_variables.csv`
 
-## 9. Nota tecnica de complejidad
+## 9. Visualizacion del hipercubo y proyecciones (3 variables)
+
+Se incluye un script para generar artefactos visuales del cubo de 3 variables y sus proyecciones marginales.
+
+Comando:
+
+```bash
+PYTHONPATH=. python review/benchmarks/visualizacion_3_variables.py
+```
+
+Salidas:
+
+- `review/salidas/hipercubo_3_variables.svg`
+- `review/salidas/proyecciones_3_variables.csv`
+- `review/salidas/adyacencia_hipercubo_3_variables.csv`
+
+## 10. Benchmark de optimizacion (antes vs despues)
+
+Para medir el efecto del Paso 10 (muestreo + simetrias + paralelizacion) frente a la ruta base:
+
+```bash
+PYTHONPATH=. python review/benchmarks/benchmark_geometric_optimizacion.py
+```
+
+Genera:
+
+- `review/benchmarks/geometric_optimizacion_detalle.csv`
+- `review/benchmarks/geometric_optimizacion_resumen.csv`
+
+Referencia local (2026-04-04):
+
+- n=9: speedup promedio `1.05x`, delta phi promedio `0.006275`
+- n=10: speedup promedio `1.22x`, delta phi promedio `0.000000`
+
+## 11. Nota tecnica de complejidad
 
 La justificacion formal del modo `estricto` y la distincion frente al modo `refinado` estan en:
 
 `review/notas/complejidad_geometric.md`
 
-## 10. Informe final de resultados
+## 12. Informe final de resultados
 
 Resumen listo para entrega (metodologia, tablas y conclusiones):
 
 `review/notas/informe_final_geometric.md`
 
-## 11. Estructura principal
+## 13. Estructura principal
 
 ```text
 src/
@@ -175,7 +209,7 @@ review/benchmarks/ # Scripts y salidas de benchmark
 review/notas/      # Notas tecnicas e informe final
 ```
 
-## 12. Flujo recomendado de trabajo
+## 14. Flujo recomendado de trabajo
 
 1. Crear/activar entorno virtual.
 2. Instalar dependencias.
@@ -183,7 +217,7 @@ review/notas/      # Notas tecnicas e informe final
 4. Ejecutar `PYTHONPATH=. python -m pytest -q` antes de cada commit.
 5. Hacer cambios pequenos, validar, y luego commit/push.
 
-## 13. Estado actual
+## 15. Estado actual
 
 - Carpeta y modulos en espanol.
 - Estrategias funcionales con pruebas automatizadas.
@@ -195,17 +229,19 @@ review/notas/      # Notas tecnicas e informe final
 - `QNodos` ya usa una logica submodular con memoizacion.
 - `Phi` usa `PyPhi` cuando esta disponible; si no, usa ruta heuristica.
 
-## 14. Comandos rapidos
+## 16. Comandos rapidos
 
 ```bash
 python exec.py --estrategia geometric --modo-geometric refinado
 python exec.py --estrategia geometric --estado-inicial 1000 --csv-muestras review/salidas/muestras_1000.csv
 PYTHONPATH=. python review/benchmarks/ejemplo_3_variables.py
+PYTHONPATH=. python review/benchmarks/visualizacion_3_variables.py
+PYTHONPATH=. python review/benchmarks/benchmark_geometric_optimizacion.py
 PYTHONPATH=. python -m pytest -q
 PYTHONPATH=. python review/benchmarks/benchmark_geometric.py
 ```
 
-## 15. Estado de cierre
+## 17. Estado de cierre
 
 Proyecto finalizado para el alcance definido:
 
