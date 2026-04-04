@@ -173,3 +173,45 @@ def test_geometric_is_faster_than_bruteforce_for_8_nodes() -> None:
     tiempo_geo = time.perf_counter() - inicio_geo
 
     assert tiempo_geo < tiempo_fb
+
+
+def test_geometric_step10_sampling_activates_for_large_n() -> None:
+    num_nodos = 9
+    tpm = _random_tpm(num_nodos, seed=101)
+    geometrica = Geometric(tpm, mode=GeometricMode.STRICT)
+
+    total_mascaras = 1 << num_nodos
+    optimizacion = geometrica._debe_optimizar_grandes(num_nodos, total_mascaras)
+    mascaras = geometrica._seleccionar_mascaras_evaluacion(
+        n_nodos=num_nodos,
+        total_mascaras=total_mascaras,
+        optimizacion_grande=optimizacion,
+    )
+
+    assert optimizacion is True
+    assert len(mascaras) < (total_mascaras - 2)
+    assert all(0 < mascara < (total_mascaras - 1) for mascara in mascaras)
+
+
+def test_geometric_step10_full_scan_for_small_n() -> None:
+    num_nodos = 8
+    tpm = _random_tpm(num_nodos, seed=102)
+    geometrica = Geometric(tpm, mode=GeometricMode.STRICT)
+
+    total_mascaras = 1 << num_nodos
+    optimizacion = geometrica._debe_optimizar_grandes(num_nodos, total_mascaras)
+    mascaras = geometrica._seleccionar_mascaras_evaluacion(
+        n_nodos=num_nodos,
+        total_mascaras=total_mascaras,
+        optimizacion_grande=optimizacion,
+    )
+
+    assert optimizacion is False
+    assert len(mascaras) == (total_mascaras - 2)
+
+
+def test_geometric_step10_complementary_masks_are_added() -> None:
+    geometrica = Geometric(_random_tpm(4, seed=103), mode=GeometricMode.STRICT)
+    salida = geometrica._incluir_complementos([3], total_mascaras=16)
+
+    assert set(salida) == {3, 12}

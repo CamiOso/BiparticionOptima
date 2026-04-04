@@ -189,6 +189,7 @@ review/notas/      # Notas tecnicas e informe final
 - Estrategias funcionales con pruebas automatizadas.
 - Estrategia `Geometric` integrada y benchmark reproducible.
 - `Geometric` separado en modo `estricto` y `refinado`.
+- `Geometric` ya incorpora optimizacion para sistemas grandes (muestreo, simetrias y costos en paralelo).
 - `SIA` ya aplica `condicion`, `alcance` y `mecanismo` al preparar subsistema.
 - `Gestor` ya permite estimar TPM desde muestras temporales binarias (`--csv-muestras`).
 - `QNodos` ya usa una logica submodular con memoizacion.

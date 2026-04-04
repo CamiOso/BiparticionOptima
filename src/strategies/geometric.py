@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from functools import partial
+import os
 
 import numpy as np
 
@@ -38,6 +41,14 @@ class Geometric(SIA):
         self._umbral_incertidumbre = 0.10
         self._random_restarts = 20
         self._umbral_restarts = 0.05
+        self._usar_optimizacion_grandes = True
+        self._umbral_nodos_optimizacion = 9
+        self._usar_simetrias_hipercubo = True
+        self._fraccion_muestreo_mascaras = 0.35
+        self._min_muestras_mascaras = 128
+        self._usar_paralelizacion_costos = True
+        self._umbral_paralelizacion_mascaras = 96
+        self._max_workers_costos = max(1, (os.cpu_count() or 2) - 1)
         self._cache_particiones: dict[
             tuple[tuple[int, ...], tuple[int, ...]],
             tuple[float, np.ndarray],
@@ -170,7 +181,10 @@ class Geometric(SIA):
         mecanismo_total: tuple[int, ...],
     ) -> tuple[list[int], int, np.ndarray, list[tuple[tuple[int, ...], tuple[int, ...]]]]:
         nodos = sorted(set(alcance_total) | set(mecanismo_total))
+        n_nodos = len(nodos)
         total_mascaras = 1 << len(nodos)
+        mascara_total = total_mascaras - 1
+        optimizacion_grande = self._debe_optimizar_grandes(n_nodos, total_mascaras)
 
         costos = np.full(total_mascaras, np.inf, dtype=np.float64)
         costos_locales = np.full(total_mascaras, np.inf, dtype=np.float64)
@@ -178,25 +192,41 @@ class Geometric(SIA):
         costos[0] = 0.0
         candidatos_costo_cero: set[int] = set()
 
-        for mascara in range(1, total_mascaras):
-            subalcance, submecanismo = self._particion_desde_mascara(
-                mascara,
-                nodos,
-                alcance_total,
-                mecanismo_total,
-            )
-            perdida_local, _ = self._evaluar_particion(subalcance, submecanismo)
-            costos_locales[mascara] = perdida_local
+        mascaras_evaluacion = self._seleccionar_mascaras_evaluacion(
+            n_nodos=n_nodos,
+            total_mascaras=total_mascaras,
+            optimizacion_grande=optimizacion_grande,
+        )
+        resultados = self._evaluar_mascaras_locales(
+            mascaras=mascaras_evaluacion,
+            nodos=nodos,
+            alcance_total=alcance_total,
+            mecanismo_total=mecanismo_total,
+        )
 
-            if perdida_local <= 1e-12 and mascara != (total_mascaras - 1):
+        for mascara, perdida_local in resultados.items():
+            costos_locales[mascara] = perdida_local
+            if optimizacion_grande and self._usar_simetrias_hipercubo:
+                mascara_comp = mascara_total ^ mascara
+                if 0 < mascara_comp < mascara_total and not np.isfinite(costos_locales[mascara_comp]):
+                    costos_locales[mascara_comp] = perdida_local
+
+        for mascara in range(1, total_mascaras):
+            perdida_local = float(costos_locales[mascara])
+            if not np.isfinite(perdida_local):
+                continue
+
+            if perdida_local <= 1e-12 and mascara != mascara_total:
                 candidatos_costo_cero.add(mascara)
 
             bits = mascara
             while bits:
                 lsb = bits & -bits
                 anterior = mascara ^ lsb
-                d = 1
-                gamma = 2.0 ** (-d)
+                if not np.isfinite(costos[anterior]):
+                    bits ^= lsb
+                    continue
+                gamma = 2.0 ** (-1)
                 costo = costos[anterior] + gamma * perdida_local
                 if costo < costos[mascara]:
                     costos[mascara] = costo
@@ -204,15 +234,31 @@ class Geometric(SIA):
 
         if not candidatos_costo_cero:
             # Si no hay costo cero, usamos las mascaras con mejor costo recursivo.
-            mejor_costo = float(np.min(costos[1:]))
-            candidatos_costo_cero = {
+            internas_finitas = [
                 mascara
                 for mascara in range(1, total_mascaras - 1)
-                if costos[mascara] <= mejor_costo + 1e-12
-            }
+                if np.isfinite(costos[mascara])
+            ]
+            if internas_finitas:
+                mejor_costo = float(min(costos[mascara] for mascara in internas_finitas))
+                candidatos_costo_cero = {
+                    mascara
+                    for mascara in internas_finitas
+                    if costos[mascara] <= mejor_costo + 1e-12
+                }
 
         if not candidatos_costo_cero:
-            candidatos_costo_cero = {int(np.argmin(costos_locales[1:])) + 1}
+            internas_locales_finitas = [
+                mascara
+                for mascara in range(1, total_mascaras - 1)
+                if np.isfinite(costos_locales[mascara])
+            ]
+            if internas_locales_finitas:
+                candidatos_costo_cero = {
+                    min(internas_locales_finitas, key=lambda mascara: float(costos_locales[mascara]))
+                }
+            else:
+                candidatos_costo_cero = {1}
 
         candidatos_base = self._seleccionar_mascaras_base(
             costos=costos,
@@ -220,6 +266,8 @@ class Geometric(SIA):
             candidatos_costo_cero=candidatos_costo_cero,
             total_mascaras=total_mascaras,
         )
+        if optimizacion_grande and self._usar_simetrias_hipercubo:
+            candidatos_base = self._incluir_complementos(candidatos_base, total_mascaras)
 
         candidatos = self._expandir_candidatos_vecindad(
             mascaras_base=candidatos_base,
@@ -495,6 +543,129 @@ class Geometric(SIA):
 
         return candidatos
 
+    def _debe_optimizar_grandes(self, n_nodos: int, total_mascaras: int) -> bool:
+        if not self._usar_optimizacion_grandes:
+            return False
+        if n_nodos < self._umbral_nodos_optimizacion:
+            return False
+        return total_mascaras >= (1 << self._umbral_nodos_optimizacion)
+
+    def _seleccionar_mascaras_evaluacion(
+        self,
+        n_nodos: int,
+        total_mascaras: int,
+        optimizacion_grande: bool,
+    ) -> list[int]:
+        internas = list(range(1, total_mascaras - 1))
+        if not optimizacion_grande:
+            return internas
+
+        candidatas = internas
+        if self._usar_simetrias_hipercubo:
+            mascara_total = total_mascaras - 1
+            candidatas = [
+                mascara
+                for mascara in internas
+                if mascara <= (mascara_total ^ mascara)
+            ]
+
+        return self._muestrear_mascaras(candidatas, n_nodos, total_mascaras)
+
+    def _muestrear_mascaras(
+        self,
+        candidatas: list[int],
+        n_nodos: int,
+        total_mascaras: int,
+    ) -> list[int]:
+        if not candidatas:
+            return [1]
+
+        if len(candidatas) <= self._min_muestras_mascaras:
+            return sorted(candidatas)
+
+        objetivo = max(
+            self._min_muestras_mascaras,
+            int(len(candidatas) * self._fraccion_muestreo_mascaras),
+        )
+        objetivo = min(objetivo, len(candidatas))
+
+        esenciales = {
+            mascara
+            for mascara in candidatas
+            if mascara.bit_count() in {1, max(1, n_nodos - 1), max(1, n_nodos // 2)}
+        }
+
+        if len(esenciales) >= objetivo:
+            return sorted(list(esenciales)[:objetivo])
+
+        restantes = [mascara for mascara in candidatas if mascara not in esenciales]
+        faltan = objetivo - len(esenciales)
+        if faltan <= 0 or not restantes:
+            return sorted(esenciales)
+
+        rng = np.random.default_rng(aplicacion.semilla_numpy + total_mascaras + n_nodos)
+        seleccion_idx = rng.choice(len(restantes), size=min(faltan, len(restantes)), replace=False)
+        muestreadas = {restantes[int(idx)] for idx in seleccion_idx.tolist()}
+        return sorted(esenciales | muestreadas)
+
+    def _incluir_complementos(self, mascaras: list[int], total_mascaras: int) -> list[int]:
+        if not mascaras:
+            return [1]
+        mascara_total = total_mascaras - 1
+        salida: set[int] = set()
+        for mascara in mascaras:
+            if 0 < mascara < mascara_total:
+                salida.add(mascara)
+            mascara_comp = mascara_total ^ mascara
+            if 0 < mascara_comp < mascara_total:
+                salida.add(mascara_comp)
+        return sorted(salida) or [1]
+
+    def _evaluar_mascara_local(
+        self,
+        mascara: int,
+        nodos: list[int],
+        alcance_total: tuple[int, ...],
+        mecanismo_total: tuple[int, ...],
+    ) -> tuple[int, float]:
+        subalcance, submecanismo = self._particion_desde_mascara(
+            mascara,
+            nodos,
+            alcance_total,
+            mecanismo_total,
+        )
+        perdida_local, _ = self._evaluar_particion(subalcance, submecanismo)
+        return mascara, float(perdida_local)
+
+    def _evaluar_mascaras_locales(
+        self,
+        mascaras: list[int],
+        nodos: list[int],
+        alcance_total: tuple[int, ...],
+        mecanismo_total: tuple[int, ...],
+    ) -> dict[int, float]:
+        if not mascaras:
+            return {}
+
+        worker = partial(
+            self._evaluar_mascara_local,
+            nodos=nodos,
+            alcance_total=alcance_total,
+            mecanismo_total=mecanismo_total,
+        )
+
+        if (
+            self._usar_paralelizacion_costos
+            and self._max_workers_costos > 1
+            and len(mascaras) >= self._umbral_paralelizacion_mascaras
+        ):
+            with ThreadPoolExecutor(max_workers=self._max_workers_costos) as executor:
+                pares = list(executor.map(worker, mascaras))
+        else:
+            pares = [worker(mascara) for mascara in mascaras]
+
+        return {mascara: perdida for mascara, perdida in pares}
+
     def _vecinos_desacoplados(
         self,
         subalcance: tuple[int, ...],
@@ -546,7 +717,14 @@ class Geometric(SIA):
         candidatos_costo_cero: set[int],
         total_mascaras: int,
     ) -> list[int]:
-        internas = list(range(1, total_mascaras - 1))
+        internas = [
+            mascara
+            for mascara in range(1, total_mascaras - 1)
+            if np.isfinite(costos[mascara]) or np.isfinite(costos_locales[mascara])
+        ]
+        if not internas:
+            return [1]
+
         top_costos = sorted(internas, key=lambda mascara: float(costos[mascara]))[: self._beam_top_k]
         top_locales = sorted(
             internas,
@@ -562,7 +740,9 @@ class Geometric(SIA):
         for mascara in (costo_cero_ordenadas + top_costos + top_locales):
             if mascara not in combinadas:
                 combinadas.append(mascara)
-        return combinadas or [int(np.argmin(costos_locales[1:])) + 1]
+        if combinadas:
+            return combinadas
+        return [min(internas, key=lambda mascara: float(costos_locales[mascara]))]
 
     def _expandir_candidatos_vecindad(
         self,

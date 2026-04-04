@@ -124,9 +124,11 @@ PYTHONPATH=. python review/benchmarks/ejemplo_3_variables.py
 - Salida generada:
   - `review/salidas/tabla_costos_3_variables.csv`
 
-3. Limitaciones que se mantienen (Paso 10)
-- El proyecto incluye refinamiento adaptativo y restarts en `Geometric`, pero no implementa aun:
-  - paralelizacion explicita del calculo de costos dentro del solver,
-  - reduccion por simetrias formales del hipercubo.
+3. Optimizacion para sistemas grandes (Paso 10)
+- Se implemento un bloque de optimizacion para `Geometric` en redes grandes (`n >= 9`):
+  - evaluacion paralela de costos locales de mascaras,
+  - muestreo controlado de mascaras para reducir evaluaciones exhaustivas,
+  - reduccion por simetria mascara-complemento en la etapa de preseleccion.
 
-Estas dos optimizaciones quedan marcadas como trabajo futuro sin bloquear el flujo base de analisis ni la reproducibilidad actual.
+- El flujo exacto para tamanos chicos se mantiene sin cambios (se sigue evaluando completo),
+  preservando la compatibilidad con pruebas de regresion y comparaciones contra `FuerzaBruta`.
