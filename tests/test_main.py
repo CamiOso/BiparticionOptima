@@ -205,3 +205,63 @@ def test_iniciar_rechaza_modo_geometrico_invalido() -> None:
             modo_geometric="modo-incorrecto",
             estado_inicial="0",
         )
+
+
+def test_iniciar_usa_csv_muestras_para_estimar_tpm(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class DummyGestor:
+        def __init__(self, estado_inicial: str):
+            self.estado_inicial = estado_inicial
+            self.archivo_tpm = Path("src/.samples/N1A.csv")
+
+        def cargar_red(self):
+            raise AssertionError("No debe cargar muestras predefinidas cuando hay csv_muestras")
+
+        def construir_tpm_desde_csv_muestras(self, ruta: Path):
+            assert ruta.name == "muestras.csv"
+            return np.array([[0.2]], dtype=np.float32)
+
+    class DummySistema:
+        def __init__(self, _tpm, _estado):
+            pass
+
+        def distribucion_marginal(self):
+            return np.array([1.0], dtype=np.float32)
+
+    class DummyCube:
+        def __init__(self, indice, dims, data):
+            self.indice = indice
+            self.dims = dims
+            self.data = data
+
+        def marginalizar(self, _dims):
+            return DummyCube(
+                indice=self.indice,
+                dims=np.array([1], dtype=np.int8),
+                data=np.array([1.0], dtype=np.float32),
+            )
+
+    def fake_ejecutar(estrategia, tpm, estado_inicial, mascara):
+        assert estrategia == "geometric"
+        assert np.allclose(tpm, np.array([[0.2]], dtype=np.float32))
+        return "geometric_refinado", _solucion_dummy("Geometric", estado_inicial), 0.03
+
+    muestras = tmp_path / "muestras.csv"
+    muestras.write_text("0\n1\n", encoding="utf-8")
+
+    monkeypatch.setattr(main_module, "Gestor", DummyGestor)
+    monkeypatch.setattr(main_module, "Sistema", DummySistema)
+    monkeypatch.setattr(main_module, "NCube", DummyCube)
+    monkeypatch.setattr(main_module, "_ejecutar_estrategia", fake_ejecutar)
+
+    payload = main_module.iniciar(
+        estrategia="geometric",
+        modo_geometric="refinado",
+        estado_inicial="0",
+        csv_muestras=str(muestras),
+    )
+
+    assert payload["archivo_tpm"].endswith("muestras.csv")
+    assert "geometric_refinado" in payload["resultados"]

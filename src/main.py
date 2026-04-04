@@ -118,6 +118,7 @@ def iniciar(
     modo_geometric: str | None = None,
     estado_inicial: str = "1000",
     output_json: str | None = None,
+    csv_muestras: str | None = None,
 ) -> dict[str, object]:
     """Orquestador inicial del proyecto."""
     logger.info("Inicio de ejecucion en main.iniciar")
@@ -146,9 +147,19 @@ def iniciar(
 
     mascara = "1" * len(estado_inicial)
     gestor = Gestor(estado_inicial=estado_inicial)
-    tpm = gestor.cargar_red()
+    if csv_muestras:
+        ruta_muestras = Path(csv_muestras)
+        tpm = gestor.construir_tpm_desde_csv_muestras(ruta_muestras)
+        fuente_tpm = str(ruta_muestras)
+        print(
+            "TPM estimada desde muestras temporales "
+            f"{ruta_muestras} con forma {tpm.shape}."
+        )
+    else:
+        tpm = gestor.cargar_red()
+        fuente_tpm = str(gestor.archivo_tpm)
+        print(f"TPM cargada desde {gestor.archivo_tpm} con forma {tpm.shape}.")
     logger.debug(f"TPM cargada con forma {tpm.shape}")
-    print(f"TPM cargada desde {gestor.archivo_tpm} con forma {tpm.shape}.")
 
     estado_vector = np.array([int(bit) for bit in estado_inicial], dtype=np.int8)
     sistema = Sistema(tpm, estado_vector)
@@ -195,7 +206,7 @@ def iniciar(
         "estrategia_solicitada": estrategia,
         "modo_geometric": aplicacion.modo_geometrico,
         "estado_inicial": estado_inicial,
-        "archivo_tpm": str(gestor.archivo_tpm),
+        "archivo_tpm": fuente_tpm,
         "resultados": resultados,
     }
 

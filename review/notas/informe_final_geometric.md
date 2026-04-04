@@ -96,3 +96,37 @@ Comandos:
 PYTHONPATH=. python -m pytest -q
 PYTHONPATH=. python review/benchmarks/benchmark_geometric.py
 ```
+
+## 9. Cierre de pendientes de la guia paso a paso
+
+Se incorporaron piezas faltantes para cubrir mejor el flujo metodologico completo:
+
+1. Construccion de TPM desde muestras temporales (Paso 1)
+- Ya se puede estimar una TPM `2^n x n` desde CSV temporal binario usando CLI:
+
+```bash
+python exec.py --estrategia geometric --estado-inicial 1000 --csv-muestras review/salidas/muestras_1000.csv
+```
+
+2. Ejemplo practico explicito con 3 variables (Paso 9)
+- Se agrego script reproducible:
+
+```bash
+PYTHONPATH=. python review/benchmarks/ejemplo_3_variables.py
+```
+
+- El script realiza:
+  - construccion/uso de TPM de 3 nodos,
+  - calculo de costo para transicion `000 -> 011` via `gamma = 2^(-d)`,
+  - busqueda de biparticion con `Geometric` (modo `estricto`),
+  - export de tabla completa de costos entre estados del cubo de 3 variables.
+
+- Salida generada:
+  - `review/salidas/tabla_costos_3_variables.csv`
+
+3. Limitaciones que se mantienen (Paso 10)
+- El proyecto incluye refinamiento adaptativo y restarts en `Geometric`, pero no implementa aun:
+  - paralelizacion explicita del calculo de costos dentro del solver,
+  - reduccion por simetrias formales del hipercubo.
+
+Estas dos optimizaciones quedan marcadas como trabajo futuro sin bloquear el flujo base de analisis ni la reproducibilidad actual.

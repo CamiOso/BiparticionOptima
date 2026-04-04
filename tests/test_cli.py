@@ -76,6 +76,23 @@ def test_cli_output_json_creates_file(tmp_path: Path) -> None:
     assert data["resultados"]["geometric_refinado"]["elapsed_seconds"] >= 0.0
 
 
+def test_cli_csv_muestras_estimacion_tpm(tmp_path: Path) -> None:
+    muestras = tmp_path / "muestras.csv"
+    muestras.write_text("0,0\n0,1\n1,1\n1,0\n0,0\n", encoding="utf-8")
+
+    result = _run_cli(
+        "--estrategia",
+        "geometric",
+        "--estado-inicial",
+        "00",
+        "--csv-muestras",
+        str(muestras),
+    )
+
+    assert result.returncode == 0
+    assert "TPM estimada desde muestras temporales" in result.stdout
+
+
 def test_cli_missing_sample_csv_has_clear_error() -> None:
     # 9 nodos requiere N9A.csv, que no existe por defecto.
     result = _run_cli("--estrategia", "geometric", "--estado-inicial", "000000000")

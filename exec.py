@@ -28,6 +28,14 @@ def _crear_parser() -> argparse.ArgumentParser:
         default=None,
         help="Ruta opcional para guardar resultados en JSON.",
     )
+    parser.add_argument(
+        "--csv-muestras",
+        default=None,
+        help=(
+            "Ruta opcional a CSV de muestras temporales binarias "
+            "(filas=tiempo, columnas=nodos) para estimar la TPM."
+        ),
+    )
     return parser
 
 
@@ -41,6 +49,7 @@ def main() -> None:
             modo_geometric=args.modo_geometric,
             estado_inicial=args.estado_inicial,
             output_json=args.output_json,
+            csv_muestras=args.csv_muestras,
         )
     except (ValueError, FileNotFoundError) as error:
         print(str(error), file=sys.stderr)

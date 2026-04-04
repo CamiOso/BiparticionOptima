@@ -53,6 +53,7 @@ python exec.py --estrategia phi
 python exec.py --estrategia qnodos
 python exec.py --estrategia geometric --estado-inicial 1000
 python exec.py --estrategia geometric --modo-geometric refinado --output-json review/salidas/geometric_1000.json
+python exec.py --estrategia geometric --estado-inicial 1000 --csv-muestras review/salidas/muestras_1000.csv
 ```
 
 Notas de CLI:
@@ -60,6 +61,8 @@ Notas de CLI:
 - `--estado-inicial` define la cantidad de nodos (longitud del bitstring).
 - La TPM esperada debe cumplir forma `2^n x n` para ese `n`.
 - `--output-json` exporta resultados de la corrida en formato JSON.
+- `--csv-muestras` permite estimar la TPM desde una secuencia temporal CSV binaria
+	(filas=tiempo, columnas=nodos). Si se usa este flag, no se carga `src/.samples/N*A.csv`.
 - El JSON incluye `elapsed_seconds` por estrategia ejecutada.
 
 Si no existe el CSV esperado para el tamano solicitado, el CLI muestra un error claro con la ruta faltante y las muestras disponibles.
@@ -122,19 +125,38 @@ Tambien genera:
 
 con promedio y mediana de speedup y `|delta phi|` por tamano de red.
 
-## 8. Nota tecnica de complejidad
+## 8. Ejemplo guiado de 3 variables
+
+Se incluye un ejemplo reproducible que cubre:
+
+- TPM de 3 nodos (`2^3 x 3`)
+- calculo de `gamma = 2^(-d)` para una transicion concreta (`000 -> 011`)
+- ejecucion de `Geometric` para recuperar biparticion optima
+- tabla de costos entre todos los pares de estados del cubo de 3 variables
+
+Comando:
+
+```bash
+PYTHONPATH=. python review/benchmarks/ejemplo_3_variables.py
+```
+
+Salida principal generada:
+
+`review/salidas/tabla_costos_3_variables.csv`
+
+## 9. Nota tecnica de complejidad
 
 La justificacion formal del modo `estricto` y la distincion frente al modo `refinado` estan en:
 
 `review/notas/complejidad_geometric.md`
 
-## 9. Informe final de resultados
+## 10. Informe final de resultados
 
 Resumen listo para entrega (metodologia, tablas y conclusiones):
 
 `review/notas/informe_final_geometric.md`
 
-## 10. Estructura principal
+## 11. Estructura principal
 
 ```text
 src/
@@ -153,7 +175,7 @@ review/benchmarks/ # Scripts y salidas de benchmark
 review/notas/      # Notas tecnicas e informe final
 ```
 
-## 11. Flujo recomendado de trabajo
+## 12. Flujo recomendado de trabajo
 
 1. Crear/activar entorno virtual.
 2. Instalar dependencias.
@@ -161,25 +183,28 @@ review/notas/      # Notas tecnicas e informe final
 4. Ejecutar `PYTHONPATH=. python -m pytest -q` antes de cada commit.
 5. Hacer cambios pequenos, validar, y luego commit/push.
 
-## 12. Estado actual
+## 13. Estado actual
 
 - Carpeta y modulos en espanol.
 - Estrategias funcionales con pruebas automatizadas.
 - Estrategia `Geometric` integrada y benchmark reproducible.
 - `Geometric` separado en modo `estricto` y `refinado`.
 - `SIA` ya aplica `condicion`, `alcance` y `mecanismo` al preparar subsistema.
+- `Gestor` ya permite estimar TPM desde muestras temporales binarias (`--csv-muestras`).
 - `QNodos` ya usa una logica submodular con memoizacion.
 - `Phi` usa `PyPhi` cuando esta disponible; si no, usa ruta heuristica.
 
-## 13. Comandos rapidos
+## 14. Comandos rapidos
 
 ```bash
 python exec.py --estrategia geometric --modo-geometric refinado
+python exec.py --estrategia geometric --estado-inicial 1000 --csv-muestras review/salidas/muestras_1000.csv
+PYTHONPATH=. python review/benchmarks/ejemplo_3_variables.py
 PYTHONPATH=. python -m pytest -q
 PYTHONPATH=. python review/benchmarks/benchmark_geometric.py
 ```
 
-## 14. Estado de cierre
+## 15. Estado de cierre
 
 Proyecto finalizado para el alcance definido:
 
