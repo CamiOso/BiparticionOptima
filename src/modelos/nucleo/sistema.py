@@ -98,6 +98,30 @@ class Sistema:
         self.memo = memo
         return Sistema._from_cubes(self.estado_inicial, memo[clave])
 
+    def k_bipartir(self, nodos: list[int], asignacion: tuple[int, ...]) -> "Sistema":
+        """Genera una K-particion aislando las conexiones dentro de cada grupo.
+
+        Para cada n-cubo con indice i en el grupo g, se marginalizan todas las
+        dimensiones que pertenecen a grupos distintos de g, conservando solo
+        las conexiones intragrupales.
+        """
+        nodo_grupo = {nodos[idx]: asignacion[idx] for idx in range(len(nodos))}
+        clave = ("k", tuple(sorted(nodo_grupo.items())))
+        memo = getattr(self, "memo", {})
+        if clave not in memo:
+            nuevos_cubos = []
+            for cubo in self.ncubos:
+                g_i = nodo_grupo.get(int(cubo.indice), 0)
+                dims_mismo_grupo = np.array(
+                    [int(d) for d in cubo.dims.tolist() if nodo_grupo.get(int(d), 0) == g_i],
+                    dtype=np.int8,
+                )
+                dims_a_marginalizar = np.setdiff1d(cubo.dims, dims_mismo_grupo)
+                nuevos_cubos.append(cubo.marginalizar(dims_a_marginalizar))
+            memo[clave] = tuple(nuevos_cubos)
+        self.memo = memo
+        return Sistema._from_cubes(self.estado_inicial, memo[clave])
+
     def distribucion_marginal(self) -> NDArray[np.float32]:
         """Calcula P(nodo_i = ON) en el estado inicial para cada n-cubo."""
         if not self.ncubos:

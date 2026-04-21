@@ -22,14 +22,14 @@ def test_cli_geometric_refinado_runs_ok() -> None:
     result = _run_cli("--estrategia", "geometric", "--modo-geometric", "refinado")
 
     assert result.returncode == 0
-    assert "Geometric (refinado)" in result.stdout
+    assert "Geometric (refinado, k=2)" in result.stdout
 
 
 def test_cli_geometric_estricto_runs_ok() -> None:
     result = _run_cli("--estrategia", "geometric", "--modo-geometric", "estricto")
 
     assert result.returncode == 0
-    assert "Geometric (estricto)" in result.stdout
+    assert "Geometric (estricto, k=2)" in result.stdout
 
 
 def test_cli_fuerza_bruta_runs_ok() -> None:
@@ -71,9 +71,25 @@ def test_cli_output_json_creates_file(tmp_path: Path) -> None:
 
     data = json.loads(output_path.read_text(encoding="utf-8"))
     assert data["estado_inicial"] == "1000"
+    assert data["k_particiones"] == 2
     assert "resultados" in data
     assert "geometric_refinado" in data["resultados"]
     assert data["resultados"]["geometric_refinado"]["elapsed_seconds"] >= 0.0
+
+
+def test_cli_geometric_k_particiones_runs_ok() -> None:
+    result = _run_cli(
+        "--estrategia",
+        "geometric",
+        "--modo-geometric",
+        "refinado",
+        "--k-particiones",
+        "3",
+    )
+
+    assert result.returncode == 0
+    assert "Geometric (refinado, k=3)" in result.stdout
+    assert "G0(" in result.stdout
 
 
 def test_cli_csv_muestras_estimacion_tpm(tmp_path: Path) -> None:

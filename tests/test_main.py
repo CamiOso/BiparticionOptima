@@ -71,6 +71,7 @@ def test_ejecutar_estrategia_por_rama(
         tpm=np.array([[0.0]], dtype=np.float32),
         estado_inicial="0",
         mascara="1",
+        k_particiones=2,
     )
 
     assert clave == expected_key
@@ -118,10 +119,11 @@ def test_iniciar_single_strategy_con_json(tmp_path: Path, monkeypatch: pytest.Mo
                 data=np.array([1.0], dtype=np.float32),
             )
 
-    def fake_ejecutar(estrategia, tpm, estado_inicial, mascara):
+    def fake_ejecutar(estrategia, tpm, estado_inicial, mascara, k_particiones=2):
         assert estrategia == "geometric"
         assert estado_inicial == "0"
         assert mascara == "1"
+        assert k_particiones == 2
         return "geometric_refinado", _solucion_dummy("Geometric", estado_inicial), 0.01
 
     monkeypatch.setattr(main_module, "Gestor", DummyGestor)
@@ -142,7 +144,60 @@ def test_iniciar_single_strategy_con_json(tmp_path: Path, monkeypatch: pytest.Mo
     assert output_path.exists()
 
     data = json.loads(output_path.read_text(encoding="utf-8"))
+    assert data["k_particiones"] == 2
     assert data["resultados"]["geometric_refinado"]["elapsed_seconds"] == 0.01
+
+
+def test_iniciar_propaga_k_particiones_a_geometric(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class DummyGestor:
+        def __init__(self, estado_inicial: str):
+            self.archivo_tpm = Path("src/.samples/N1A.csv")
+            self.estado_inicial = estado_inicial
+
+        def cargar_red(self):
+            return np.array([[0.0]], dtype=np.float32)
+
+    class DummySistema:
+        def __init__(self, _tpm, _estado):
+            pass
+
+        def distribucion_marginal(self):
+            return np.array([1.0], dtype=np.float32)
+
+    class DummyCube:
+        def __init__(self, indice, dims, data):
+            self.indice = indice
+            self.dims = dims
+            self.data = data
+
+        def marginalizar(self, _dims):
+            return DummyCube(
+                indice=self.indice,
+                dims=np.array([1], dtype=np.int8),
+                data=np.array([1.0], dtype=np.float32),
+            )
+
+    def fake_ejecutar(estrategia, tpm, estado_inicial, mascara, k_particiones=2):
+        assert estrategia == "geometric"
+        assert k_particiones == 3
+        return "geometric_refinado_k3", _solucion_dummy("Geometric", estado_inicial), 0.01
+
+    monkeypatch.setattr(main_module, "Gestor", DummyGestor)
+    monkeypatch.setattr(main_module, "Sistema", DummySistema)
+    monkeypatch.setattr(main_module, "NCube", DummyCube)
+    monkeypatch.setattr(main_module, "_ejecutar_estrategia", fake_ejecutar)
+
+    payload = main_module.iniciar(
+        estrategia="geometric",
+        modo_geometric="refinado",
+        estado_inicial="0",
+        k_particiones=3,
+    )
+
+    assert payload["k_particiones"] == 3
+    assert "geometric_refinado_k3" in payload["resultados"]
 
 
 def test_iniciar_todas_ejecuta_flujo_completo(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -176,7 +231,7 @@ def test_iniciar_todas_ejecuta_flujo_completo(monkeypatch: pytest.MonkeyPatch) -
 
     llamadas: list[str] = []
 
-    def fake_ejecutar(estrategia, tpm, estado_inicial, mascara):
+    def fake_ejecutar(estrategia, tpm, estado_inicial, mascara, k_particiones=2):
         llamadas.append(estrategia)
         if estrategia == "geometric":
             clave = f"geometric_{main_module.aplicacion.modo_geometrico}"
@@ -204,6 +259,15 @@ def test_iniciar_rechaza_modo_geometrico_invalido() -> None:
             estrategia="geometric",
             modo_geometric="modo-incorrecto",
             estado_inicial="0",
+        )
+
+
+def test_iniciar_rechaza_k_particiones_invalido() -> None:
+    with pytest.raises(ValueError):
+        main_module.iniciar(
+            estrategia="geometric",
+            estado_inicial="0",
+            k_particiones=1,
         )
 
 
@@ -243,9 +307,10 @@ def test_iniciar_usa_csv_muestras_para_estimar_tpm(
                 data=np.array([1.0], dtype=np.float32),
             )
 
-    def fake_ejecutar(estrategia, tpm, estado_inicial, mascara):
+    def fake_ejecutar(estrategia, tpm, estado_inicial, mascara, k_particiones=2):
         assert estrategia == "geometric"
         assert np.allclose(tpm, np.array([[0.2]], dtype=np.float32))
+        assert k_particiones == 2
         return "geometric_refinado", _solucion_dummy("Geometric", estado_inicial), 0.03
 
     muestras = tmp_path / "muestras.csv"

@@ -1,4 +1,4 @@
-from itertools import combinations
+from itertools import combinations, product as iproduct
 from typing import Iterator
 
 import numpy as np
@@ -40,6 +40,34 @@ def generar_subsistemas(
     for alcance_removido in subconjuntos(dimensiones_candidato):
         for mecanismo_removido in subconjuntos(dimensiones_candidato):
             yield alcance_removido, mecanismo_removido
+
+
+def k_particiones_asignacion(n_nodos: int, k: int) -> Iterator[tuple[int, ...]]:
+    """Genera asignaciones canonicas de n nodos con entre 2 y k grupos.
+
+    Canonico: los grupos aparecen en orden de primera ocurrencia, asi 0 siempre
+    aparece antes que 1, 1 antes que 2, etc. Esto elimina duplicados por
+    permutacion de etiquetas de grupo.
+
+    Buscar hasta k grupos (no exactamente k) permite que la MIP sea siempre
+    igual o mejor que la biparticion: mas grados de libertad, menor o igual perdida.
+    """
+    if k < 2 or n_nodos < 2:
+        return
+    k_eff = min(k, n_nodos)
+    for asignacion in iproduct(range(k_eff), repeat=n_nodos):
+        siguiente = 0
+        es_canon = True
+        grupos_vistos: set[int] = set()
+        for g in asignacion:
+            if g not in grupos_vistos:
+                if g != siguiente:
+                    es_canon = False
+                    break
+                grupos_vistos.add(g)
+                siguiente += 1
+        if es_canon and siguiente >= 2:
+            yield asignacion
 
 
 def etiqueta_subconjunto(

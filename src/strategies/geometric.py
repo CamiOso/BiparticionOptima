@@ -8,9 +8,9 @@ import os
 import numpy as np
 
 from src.constantes.models import GEOMETRIC_LABEL
-from src.funciones.formato import fmt_biparticion
+from src.funciones.formato import fmt_biparticion, fmt_k_particion_asignacion
 from src.funciones.iit import seleccionar_emd
-from src.funciones.particiones import biparticiones
+from src.funciones.particiones import biparticiones, k_particiones_asignacion
 from src.modelos.base.aplicacion import aplicacion
 from src.modelos.base.sia import SIA
 from src.modelos.enumeraciones.geometric_mode import GeometricMode
@@ -23,6 +23,14 @@ class _ResultadoParticion:
     distribucion: np.ndarray
     subalcance: tuple[int, ...]
     submecanismo: tuple[int, ...]
+
+
+@dataclass(frozen=True)
+class _ResultadoParticionK:
+    perdida: float
+    distribucion: np.ndarray
+    asignacion: tuple[int, ...]
+    nodos: list[int]
 
 
 class Geometric(SIA):
@@ -53,6 +61,10 @@ class Geometric(SIA):
             tuple[tuple[int, ...], tuple[int, ...]],
             tuple[float, np.ndarray],
         ] = {}
+        self._cache_k_particiones: dict[
+            tuple[int, ...],
+            tuple[float, np.ndarray],
+        ] = {}
 
     def aplicar_estrategia(
         self,
@@ -60,13 +72,18 @@ class Geometric(SIA):
         condicion: str,
         alcance: str,
         mecanismo: str,
+        k: int = 2,
     ) -> Solucion:
+        if k < 2:
+            raise ValueError(f"k debe ser >= 2, se recibio {k}.")
+
         self.sia_preparar_subsistema(estado_inicial, condicion, alcance, mecanismo)
 
         assert self.sia_subsistema is not None
         assert self.sia_dists_marginales is not None
 
         self._cache_particiones.clear()
+        self._cache_k_particiones.clear()
         _ = self._tpm_a_tensores_elementales()
 
         alcance_total = tuple(int(v) for v in self.sia_subsistema.indices_ncubos.tolist())
@@ -80,6 +97,22 @@ class Geometric(SIA):
                 distribucion_particion=self.sia_dists_marginales.copy(),
                 estado_inicial=estado_inicial,
                 particion="NO-PARTITION",
+            )
+
+        if k > 2:
+            mejor_k = self._resolver_k_particiones(alcance_total, mecanismo_total, k)
+            return Solucion(
+                estrategia=GEOMETRIC_LABEL,
+                perdida=mejor_k.perdida,
+                distribucion_subsistema=self.sia_dists_marginales,
+                distribucion_particion=mejor_k.distribucion,
+                estado_inicial=estado_inicial,
+                particion=fmt_k_particion_asignacion(
+                    mejor_k.nodos,
+                    mejor_k.asignacion,
+                    alcance_total,
+                    mecanismo_total,
+                ),
             )
 
         n_nodos = len(set(alcance_total) | set(mecanismo_total))
@@ -845,6 +878,181 @@ class Geometric(SIA):
         salida = np.zeros_like(referencia)
         salida[: distribucion.size] = distribucion
         return salida
+
+    # ------------------------------------------------------------------
+    # K-particion (k >= 3)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _canonicalizar_asignacion(asignacion: tuple[int, ...]) -> tuple[int, ...]:
+        """Renumera grupos segun orden de primera aparicion para forma canonica."""
+        mapa: dict[int, int] = {}
+        siguiente = 0
+        resultado = []
+        for g in asignacion:
+            if g not in mapa:
+                mapa[g] = siguiente
+                siguiente += 1
+            resultado.append(mapa[g])
+        return tuple(resultado)
+
+    def _evaluar_k_particion(
+        self,
+        asignacion: tuple[int, ...],
+        nodos: list[int],
+    ) -> tuple[float, np.ndarray]:
+        en_cache = self._cache_k_particiones.get(asignacion)
+        if en_cache is not None:
+            return en_cache
+
+        assert self.sia_subsistema is not None
+        assert self.sia_dists_marginales is not None
+
+        sistema_partido = self.sia_subsistema.k_bipartir(nodos, asignacion)
+        distribucion = sistema_partido.distribucion_marginal()
+        distribucion = self._alinear_distribucion(distribucion, self.sia_dists_marginales)
+        perdida = float(self.distancia_metrica(self.sia_dists_marginales, distribucion))
+        resultado = (perdida, distribucion)
+        self._cache_k_particiones[asignacion] = resultado
+        return resultado
+
+    def _resolver_k_particiones(
+        self,
+        alcance_total: tuple[int, ...],
+        mecanismo_total: tuple[int, ...],
+        k: int,
+    ) -> _ResultadoParticionK:
+        nodos = sorted(set(alcance_total) | set(mecanismo_total))
+        n_nodos = len(nodos)
+        k_eff = min(k, n_nodos)
+
+        if n_nodos <= 5:
+            return self._resolver_k_exacto(alcance_total, mecanismo_total, k_eff, nodos)
+        return self._resolver_k_local(alcance_total, mecanismo_total, k_eff, nodos)
+
+    def _resolver_k_exacto(
+        self,
+        alcance_total: tuple[int, ...],
+        mecanismo_total: tuple[int, ...],
+        k: int,
+        nodos: list[int],
+    ) -> _ResultadoParticionK:
+        n_nodos = len(nodos)
+        asignacion_fallback = tuple([0] * (n_nodos - 1) + [1])
+        perdida_fallback, dist_fallback = self._evaluar_k_particion(asignacion_fallback, nodos)
+        mejor = _ResultadoParticionK(
+            perdida=perdida_fallback,
+            distribucion=dist_fallback,
+            asignacion=asignacion_fallback,
+            nodos=nodos,
+        )
+
+        for asignacion in k_particiones_asignacion(n_nodos, k):
+            perdida, distribucion = self._evaluar_k_particion(asignacion, nodos)
+            if perdida < mejor.perdida:
+                mejor = _ResultadoParticionK(
+                    perdida=perdida,
+                    distribucion=distribucion,
+                    asignacion=asignacion,
+                    nodos=nodos,
+                )
+        return mejor
+
+    def _vecinos_k(
+        self,
+        asignacion: tuple[int, ...],
+        k: int,
+    ) -> list[tuple[int, ...]]:
+        """Genera vecinos moviendo un nodo a cualquier otro grupo."""
+        vecinos: list[tuple[int, ...]] = []
+        vistos: set[tuple[int, ...]] = set()
+        for idx in range(len(asignacion)):
+            for nuevo_grupo in range(k):
+                if nuevo_grupo == asignacion[idx]:
+                    continue
+                nueva = list(asignacion)
+                nueva[idx] = nuevo_grupo
+                canon = self._canonicalizar_asignacion(tuple(nueva))
+                if len(set(canon)) < 2:
+                    continue
+                if canon in vistos:
+                    continue
+                vistos.add(canon)
+                vecinos.append(canon)
+        return vecinos
+
+    def _refinar_k_local(
+        self,
+        inicio: _ResultadoParticionK,
+        k: int,
+        nodos: list[int],
+        max_iter: int,
+    ) -> _ResultadoParticionK:
+        actual = inicio
+        mejor_global = inicio
+        for _ in range(max_iter):
+            vecinos = self._vecinos_k(actual.asignacion, k)
+            if not vecinos:
+                break
+            mejor_vecino = actual
+            for asignacion_vec in vecinos:
+                perdida, distribucion = self._evaluar_k_particion(asignacion_vec, nodos)
+                if perdida < mejor_vecino.perdida:
+                    mejor_vecino = _ResultadoParticionK(
+                        perdida=perdida,
+                        distribucion=distribucion,
+                        asignacion=asignacion_vec,
+                        nodos=nodos,
+                    )
+            if mejor_vecino.perdida + 1e-12 >= actual.perdida:
+                break
+            actual = mejor_vecino
+            if actual.perdida < mejor_global.perdida:
+                mejor_global = actual
+        return mejor_global
+
+    def _resolver_k_local(
+        self,
+        alcance_total: tuple[int, ...],
+        mecanismo_total: tuple[int, ...],
+        k: int,
+        nodos: list[int],
+    ) -> _ResultadoParticionK:
+        n_nodos = len(nodos)
+        rng = np.random.default_rng(aplicacion.semilla_numpy)
+
+        asignacion_inicial = self._canonicalizar_asignacion(
+            tuple(list(range(k)) + [int(rng.integers(0, k)) for _ in range(max(0, n_nodos - k))])
+        )
+        perdida_ini, dist_ini = self._evaluar_k_particion(asignacion_inicial, nodos)
+        mejor_global = _ResultadoParticionK(
+            perdida=perdida_ini,
+            distribucion=dist_ini,
+            asignacion=asignacion_inicial,
+            nodos=nodos,
+        )
+        mejor_global = self._refinar_k_local(
+            mejor_global, k, nodos, self._max_iter_refinamiento
+        )
+
+        for _ in range(self._random_restarts):
+            perm = list(range(k)) + [int(rng.integers(0, k)) for _ in range(max(0, n_nodos - k))]
+            rng.shuffle(perm)
+            asignacion = self._canonicalizar_asignacion(tuple(int(v) for v in perm))
+            perdida, dist = self._evaluar_k_particion(asignacion, nodos)
+            semilla = _ResultadoParticionK(
+                perdida=perdida,
+                distribucion=dist,
+                asignacion=asignacion,
+                nodos=nodos,
+            )
+            refinado = self._refinar_k_local(
+                semilla, k, nodos, self._max_iter_refinamiento
+            )
+            if refinado.perdida < mejor_global.perdida:
+                mejor_global = refinado
+
+        return mejor_global
 
 
 # Alias en espanol para conservar consistencia del proyecto.

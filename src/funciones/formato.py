@@ -42,6 +42,23 @@ def fmt_solution_block(
     )
 
 
+def fmt_k_particion_asignacion(
+    nodos: list[int],
+    asignacion: tuple[int, ...],
+    alcance_total: tuple[int, ...],
+    mecanismo_total: tuple[int, ...],
+) -> str:
+    """Renderiza una K-particion mostrando los subconjuntos de alcance y mecanismo por grupo."""
+    k = max(asignacion) + 1 if asignacion else 0
+    nodo_a_idx = {nodo: idx for idx, nodo in enumerate(nodos)}
+    partes = []
+    for g in range(k):
+        alc_g = tuple(v for v in alcance_total if nodo_a_idx.get(v, -1) >= 0 and asignacion[nodo_a_idx[v]] == g)
+        mec_g = tuple(v for v in mecanismo_total if nodo_a_idx.get(v, -1) >= 0 and asignacion[nodo_a_idx[v]] == g)
+        partes.append(f"G{g}(M={mec_g}, A={alc_g})")
+    return " | ".join(partes)
+
+
 def fmt_biparticion_q(
     grupo_uno: list[tuple[int, int]],
     grupo_dos: list[tuple[int, int]],

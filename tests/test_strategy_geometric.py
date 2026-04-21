@@ -5,6 +5,7 @@ import numpy as np
 import pytest
 
 from src.controladores.gestor import Gestor
+from src.funciones.particiones import k_particiones_asignacion
 from src.estrategias.fuerza_bruta import FuerzaBruta
 from src.modelos.base.aplicacion import aplicacion
 from src.modelos.enumeraciones.geometric_mode import GeometricMode
@@ -215,3 +216,30 @@ def test_geometric_step10_complementary_masks_are_added() -> None:
     salida = geometrica._incluir_complementos([3], total_mascaras=16)
 
     assert set(salida) == {3, 12}
+
+
+def test_geometric_k_particiones_exacto_mejora_o_iguala_biparticion_compartida() -> None:
+    tpm = _random_tpm(4, seed=104)
+    geometrica = Geometric(tpm, mode=GeometricMode.REFINED)
+
+    resultado_k3 = geometrica.aplicar_estrategia(
+        estado_inicial="0000",
+        condicion="1111",
+        alcance="1111",
+        mecanismo="1111",
+        k=3,
+    )
+
+    geometrica.sia_preparar_subsistema("0000", "1111", "1111", "1111")
+    assert geometrica.sia_subsistema is not None
+    nodos = sorted(
+        set(int(v) for v in geometrica.sia_subsistema.indices_ncubos.tolist())
+        | set(int(v) for v in geometrica.sia_subsistema.dims_ncubos.tolist())
+    )
+    mejor_k2_compartida = min(
+        geometrica._evaluar_k_particion(asignacion, nodos)[0]
+        for asignacion in k_particiones_asignacion(len(nodos), 2)
+    )
+
+    assert resultado_k3.perdida <= mejor_k2_compartida + 1e-12
+    assert "G0(" in resultado_k3.particion

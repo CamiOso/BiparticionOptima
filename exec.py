@@ -36,6 +36,12 @@ def _crear_parser() -> argparse.ArgumentParser:
             "(filas=tiempo, columnas=nodos) para estimar la TPM."
         ),
     )
+    parser.add_argument(
+        "--k-particiones",
+        type=int,
+        default=2,
+        help="Cantidad maxima de grupos para Geometric. Usa 2 para biparticion.",
+    )
     return parser
 
 
@@ -50,6 +56,7 @@ def main() -> None:
             estado_inicial=args.estado_inicial,
             output_json=args.output_json,
             csv_muestras=args.csv_muestras,
+            k_particiones=args.k_particiones,
         )
     except (ValueError, FileNotFoundError) as error:
         print(str(error), file=sys.stderr)

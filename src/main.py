@@ -49,6 +49,7 @@ def _ejecutar_estrategia(
     tpm: np.ndarray,
     estado_inicial: str,
     mascara: str,
+    k_particiones: int = 2,
 ):
     estrategia = estrategia.lower()
 
@@ -105,10 +106,12 @@ def _ejecutar_estrategia(
             condicion=mascara,
             alcance=mascara,
             mecanismo=mascara,
+            k=k_particiones,
         )
         elapsed = time.perf_counter() - inicio
-        print(f"Geometric ({aplicacion.modo_geometrico}) ->\n{resultado}")
-        return f"geometric_{aplicacion.modo_geometrico}", resultado, elapsed
+        sufijo_k = "" if k_particiones == 2 else f"_k{k_particiones}"
+        print(f"Geometric ({aplicacion.modo_geometrico}, k={k_particiones}) ->\n{resultado}")
+        return f"geometric_{aplicacion.modo_geometrico}{sufijo_k}", resultado, elapsed
 
     raise ValueError(f"Estrategia no soportada: {estrategia}")
 
@@ -119,6 +122,7 @@ def iniciar(
     estado_inicial: str = "1000",
     output_json: str | None = None,
     csv_muestras: str | None = None,
+    k_particiones: int = 2,
 ) -> dict[str, object]:
     """Orquestador inicial del proyecto."""
     logger.info("Inicio de ejecucion en main.iniciar")
@@ -128,6 +132,8 @@ def iniciar(
         if modo_geometric not in {GeometricMode.STRICT.value, GeometricMode.REFINED.value}:
             raise ValueError(f"Modo geometrico no soportado: {modo_geometric}")
         aplicacion.modo_geometrico = modo_geometric
+    if k_particiones < 2:
+        raise ValueError(f"k_particiones debe ser >= 2, se recibio {k_particiones}.")
 
     print(
         f"{PROJECT_NAME} v{PROJECT_VERSION}: proyecto iniciado correctamente con estrategia base {BRUTEFORCE_LABEL}."
@@ -179,14 +185,32 @@ def iniciar(
         resultados[clave] = _solucion_a_dict(resultado, elapsed)
 
         aplicacion.set_modo_geometrico(GeometricMode.STRICT)
-        clave, resultado, elapsed = _ejecutar_estrategia("geometric", tpm, estado_inicial, mascara)
+        clave, resultado, elapsed = _ejecutar_estrategia(
+            "geometric",
+            tpm,
+            estado_inicial,
+            mascara,
+            k_particiones=k_particiones,
+        )
         resultados[clave] = _solucion_a_dict(resultado, elapsed)
 
         aplicacion.set_modo_geometrico(GeometricMode.REFINED)
-        clave, resultado, elapsed = _ejecutar_estrategia("geometric", tpm, estado_inicial, mascara)
+        clave, resultado, elapsed = _ejecutar_estrategia(
+            "geometric",
+            tpm,
+            estado_inicial,
+            mascara,
+            k_particiones=k_particiones,
+        )
         resultados[clave] = _solucion_a_dict(resultado, elapsed)
     else:
-        clave, resultado, elapsed = _ejecutar_estrategia(estrategia, tpm, estado_inicial, mascara)
+        clave, resultado, elapsed = _ejecutar_estrategia(
+            estrategia,
+            tpm,
+            estado_inicial,
+            mascara,
+            k_particiones=k_particiones,
+        )
         resultados[clave] = _solucion_a_dict(resultado, elapsed)
 
     cubo_demo = NCube(
@@ -205,6 +229,7 @@ def iniciar(
     payload = {
         "estrategia_solicitada": estrategia,
         "modo_geometric": aplicacion.modo_geometrico,
+        "k_particiones": k_particiones,
         "estado_inicial": estado_inicial,
         "archivo_tpm": fuente_tpm,
         "resultados": resultados,
