@@ -116,3 +116,18 @@ def test_cli_missing_sample_csv_has_clear_error() -> None:
     assert result.returncode != 0
     assert "No se encontro la muestra TPM esperada" in result.stderr
     assert "N9A.csv" in result.stderr
+
+
+def test_cli_qnodes_k_particiones_runs_ok() -> None:
+    result = _run_cli(
+        "--estrategia",
+        "qnodos",
+        "--estado-inicial",
+        "1000",
+        "--k-particiones",
+        "3",
+    )
+
+    assert result.returncode == 0
+    assert "Q-Nodos" in result.stdout
+    assert "G0(" in result.stdout

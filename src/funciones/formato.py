@@ -76,3 +76,20 @@ def fmt_biparticion_q(
         f"G1(M={mecanismos_uno}, A={alcances_uno}) | "
         f"G2(M={mecanismos_dos}, A={alcances_dos})"
     )
+
+
+def fmt_k_particion_q(
+    grupos: list[list[tuple[int, int]]],
+) -> str:
+    """Formatea una K-particion de QNodos usando grupos de nodos (tiempo, indice)."""
+
+    def separar(grupo: list[tuple[int, int]]) -> tuple[tuple[int, ...], tuple[int, ...]]:
+        mecanismos = tuple(idx for tiempo, idx in sorted(grupo, key=lambda v: (v[0], v[1])) if tiempo == 0)
+        alcances = tuple(idx for tiempo, idx in sorted(grupo, key=lambda v: (v[0], v[1])) if tiempo == 1)
+        return mecanismos, alcances
+
+    partes = []
+    for indice_grupo, grupo in enumerate(grupos):
+        mecanismos, alcances = separar(grupo)
+        partes.append(f"G{indice_grupo}(M={mecanismos}, A={alcances})")
+    return " | ".join(partes)

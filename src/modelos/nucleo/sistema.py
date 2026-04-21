@@ -122,6 +122,50 @@ class Sistema:
         self.memo = memo
         return Sistema._from_cubes(self.estado_inicial, memo[clave])
 
+    def k_bipartir_temporal(
+        self,
+        grupos_mecanismo: list[tuple[int, ...]],
+        grupos_alcance: list[tuple[int, ...]],
+    ) -> "Sistema":
+        """Genera una K-particion para grupos temporales de mecanismo y alcance.
+
+        Cada n-cubo futuro i conserva solo las dimensiones de mecanismo que
+        pertenecen al mismo grupo temporal que i dentro de la particion.
+        """
+        mecanismo_a_grupo = {
+            indice: grupo
+            for grupo, indices in enumerate(grupos_mecanismo)
+            for indice in indices
+        }
+        alcance_a_grupo = {
+            indice: grupo
+            for grupo, indices in enumerate(grupos_alcance)
+            for indice in indices
+        }
+        clave = (
+            "k_temporal",
+            tuple(tuple(int(v) for v in grupo) for grupo in grupos_mecanismo),
+            tuple(tuple(int(v) for v in grupo) for grupo in grupos_alcance),
+        )
+        memo = getattr(self, "memo", {})
+        if clave not in memo:
+            nuevos_cubos = []
+            for cubo in self.ncubos:
+                grupo_futuro = alcance_a_grupo.get(int(cubo.indice), -1)
+                dims_mismo_grupo = np.array(
+                    [
+                        int(d)
+                        for d in cubo.dims.tolist()
+                        if mecanismo_a_grupo.get(int(d), -2) == grupo_futuro
+                    ],
+                    dtype=np.int8,
+                )
+                dims_a_marginalizar = np.setdiff1d(cubo.dims, dims_mismo_grupo)
+                nuevos_cubos.append(cubo.marginalizar(dims_a_marginalizar))
+            memo[clave] = tuple(nuevos_cubos)
+        self.memo = memo
+        return Sistema._from_cubes(self.estado_inicial, memo[clave])
+
     def distribucion_marginal(self) -> NDArray[np.float32]:
         """Calcula P(nodo_i = ON) en el estado inicial para cada n-cubo."""
         if not self.ncubos:

@@ -93,10 +93,12 @@ def _ejecutar_estrategia(
             condicion=mascara,
             alcance=mascara,
             mecanismo=mascara,
+            k=k_particiones,
         )
         elapsed = time.perf_counter() - inicio
         print(f"Q-Nodos ->\n{resultado}")
-        return "qnodos", resultado, elapsed
+        sufijo_k = "" if k_particiones == 2 else f"_k{k_particiones}"
+        return f"qnodos{sufijo_k}", resultado, elapsed
 
     if estrategia == "geometric":
         solver = Geometric(tpm)

@@ -1,0 +1,7 @@
+k,nodos,muestras,tiempo_qnodos_prom_s,tiempo_geometric_prom_s,speedup_geometric_sobre_qnodos_prom_x,speedup_qnodos_sobre_geometric_prom_x,diferencia_phi_prom_abs,diferencia_phi_mediana_abs,victorias_phi_qnodos,victorias_phi_geometric,empates_phi,victorias_tiempo_qnodos,victorias_tiempo_geometric,empates_tiempo
+3,4,5,0.372883,0.007950,48.18,0.02,0.359320,0.341148,5,0,0,0,5,0
+3,5,5,0.571871,0.026133,22.06,0.05,0.590350,0.562636,5,0,0,0,5,0
+3,6,5,0.918635,0.093868,10.11,0.10,0.575644,0.605125,5,0,0,0,5,0
+4,4,5,1.215136,0.011694,112.36,0.01,0.359320,0.341148,5,0,0,0,5,0
+4,5,5,0.983822,0.038101,27.04,0.04,0.590350,0.562636,5,0,0,0,5,0
+4,6,5,1.935469,0.120451,16.13,0.06,0.575644,0.605125,5,0,0,0,5,0

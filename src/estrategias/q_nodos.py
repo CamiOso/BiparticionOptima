@@ -1,9 +1,21 @@
+from dataclasses import dataclass
+
 import numpy as np
 
-from src.funciones.formato import fmt_biparticion_q
+from src.funciones.formato import fmt_biparticion_q, fmt_k_particion_q
 from src.funciones.iit import seleccionar_emd
+from src.funciones.particiones import k_particiones_asignacion
+from src.modelos.base.aplicacion import aplicacion
 from src.modelos.base.sia import SIA
 from src.modelos.nucleo.solucion import Solucion
+
+
+@dataclass(frozen=True)
+class _ResultadoParticionQK:
+    perdida: float
+    distribucion: np.ndarray
+    asignacion: tuple[int, ...]
+    vertices: list[tuple[int, int]]
 
 
 class QNodos(SIA):
@@ -16,6 +28,9 @@ class QNodos(SIA):
         self.memoria_grupo_candidato: dict[tuple[tuple[int, int], ...], tuple[float, np.ndarray | None]] = {}
         self.clave_submodular: list[list[int]] = [[], []]
         self.vertices: set[tuple[int, int]] = set()
+        self._cache_k_particiones: dict[tuple[int, ...], tuple[float, np.ndarray]] = {}
+        self._max_iter_refinamiento_k = 24
+        self._random_restarts_k = 16
 
     def aplicar_estrategia(
         self,
@@ -23,7 +38,11 @@ class QNodos(SIA):
         condicion: str,
         alcance: str,
         mecanismo: str,
+        k: int = 2,
     ) -> Solucion:
+        if k < 2:
+            raise ValueError(f"k debe ser >= 2, se recibio {k}.")
+
         self.sia_preparar_subsistema(estado_inicial, condicion, alcance, mecanismo)
 
         assert self.sia_dists_marginales is not None
@@ -37,6 +56,19 @@ class QNodos(SIA):
         presente = [(0, int(indice)) for indice in self.sia_subsistema.dims_ncubos.tolist()]
         vertices = list(presente + futuro)
         self.vertices = set(vertices)
+
+        if k > 2:
+            self._cache_k_particiones.clear()
+            mejor_k = self._resolver_k_particiones(vertices, k)
+            grupos = self._grupos_desde_asignacion(mejor_k.asignacion, mejor_k.vertices)
+            return Solucion(
+                estrategia="QNodos",
+                perdida=float(mejor_k.perdida),
+                distribucion_subsistema=distribucion_subsistema,
+                distribucion_particion=mejor_k.distribucion,
+                estado_inicial=estado_inicial,
+                particion=fmt_k_particion_q(grupos),
+            )
 
         clave_mip = self.algoritmo_q(vertices)
         perdida_mip, distribucion_particion = self.memoria_grupo_candidato[clave_mip]
@@ -194,6 +226,198 @@ class QNodos(SIA):
         distribucion_alineada = np.zeros_like(referencia)
         distribucion_alineada[: distribucion.size] = distribucion
         return distribucion_alineada
+
+    @staticmethod
+    def _canonicalizar_asignacion(asignacion: tuple[int, ...]) -> tuple[int, ...]:
+        mapa: dict[int, int] = {}
+        siguiente = 0
+        resultado = []
+        for grupo in asignacion:
+            if grupo not in mapa:
+                mapa[grupo] = siguiente
+                siguiente += 1
+            resultado.append(mapa[grupo])
+        return tuple(resultado)
+
+    def _grupos_desde_asignacion(
+        self,
+        asignacion: tuple[int, ...],
+        vertices: list[tuple[int, int]],
+    ) -> list[list[tuple[int, int]]]:
+        if not asignacion:
+            return []
+        total_grupos = max(asignacion) + 1
+        grupos: list[list[tuple[int, int]]] = [[] for _ in range(total_grupos)]
+        for indice, grupo in enumerate(asignacion):
+            grupos[grupo].append(vertices[indice])
+        return grupos
+
+    def _evaluar_k_particion(
+        self,
+        asignacion: tuple[int, ...],
+        vertices: list[tuple[int, int]],
+    ) -> tuple[float, np.ndarray]:
+        en_cache = self._cache_k_particiones.get(asignacion)
+        if en_cache is not None:
+            return en_cache
+
+        assert self.sia_subsistema is not None
+        assert self.sia_dists_marginales is not None
+
+        grupos = self._grupos_desde_asignacion(asignacion, vertices)
+        grupos_mecanismo = [
+            tuple(indice for tiempo, indice in grupo if tiempo == 0)
+            for grupo in grupos
+        ]
+        grupos_alcance = [
+            tuple(indice for tiempo, indice in grupo if tiempo == 1)
+            for grupo in grupos
+        ]
+
+        sistema_partido = self.sia_subsistema.k_bipartir_temporal(
+            grupos_mecanismo,
+            grupos_alcance,
+        )
+        distribucion = self._alinear_distribucion(
+            sistema_partido.distribucion_marginal(),
+            self.sia_dists_marginales,
+        )
+        perdida = float(self.distancia_metrica(distribucion, self.sia_dists_marginales))
+        resultado = (perdida, distribucion)
+        self._cache_k_particiones[asignacion] = resultado
+        return resultado
+
+    def _resolver_k_particiones(
+        self,
+        vertices: list[tuple[int, int]],
+        k: int,
+    ) -> _ResultadoParticionQK:
+        if len(vertices) <= 8:
+            return self._resolver_k_exacto(vertices, k)
+        return self._resolver_k_local(vertices, k)
+
+    def _resolver_k_exacto(
+        self,
+        vertices: list[tuple[int, int]],
+        k: int,
+    ) -> _ResultadoParticionQK:
+        total_vertices = len(vertices)
+        asignacion_fallback = tuple([0] * (total_vertices - 1) + [1])
+        perdida_fallback, distribucion_fallback = self._evaluar_k_particion(
+            asignacion_fallback,
+            vertices,
+        )
+        mejor = _ResultadoParticionQK(
+            perdida=perdida_fallback,
+            distribucion=distribucion_fallback,
+            asignacion=asignacion_fallback,
+            vertices=vertices,
+        )
+
+        for asignacion in k_particiones_asignacion(total_vertices, min(k, total_vertices)):
+            perdida, distribucion = self._evaluar_k_particion(asignacion, vertices)
+            if perdida < mejor.perdida:
+                mejor = _ResultadoParticionQK(
+                    perdida=perdida,
+                    distribucion=distribucion,
+                    asignacion=asignacion,
+                    vertices=vertices,
+                )
+        return mejor
+
+    def _vecinos_k(
+        self,
+        asignacion: tuple[int, ...],
+        k: int,
+    ) -> list[tuple[int, ...]]:
+        vecinos: list[tuple[int, ...]] = []
+        vistos: set[tuple[int, ...]] = set()
+        for indice in range(len(asignacion)):
+            for nuevo_grupo in range(k):
+                if nuevo_grupo == asignacion[indice]:
+                    continue
+                nueva = list(asignacion)
+                nueva[indice] = nuevo_grupo
+                canon = self._canonicalizar_asignacion(tuple(nueva))
+                if len(set(canon)) < 2:
+                    continue
+                if canon in vistos:
+                    continue
+                vistos.add(canon)
+                vecinos.append(canon)
+        return vecinos
+
+    def _refinar_k_local(
+        self,
+        inicio: _ResultadoParticionQK,
+        vertices: list[tuple[int, int]],
+        k: int,
+    ) -> _ResultadoParticionQK:
+        actual = inicio
+        mejor_global = inicio
+        for _ in range(self._max_iter_refinamiento_k):
+            vecinos = self._vecinos_k(actual.asignacion, k)
+            if not vecinos:
+                break
+            mejor_vecino = actual
+            for vecino in vecinos:
+                perdida, distribucion = self._evaluar_k_particion(vecino, vertices)
+                if perdida < mejor_vecino.perdida:
+                    mejor_vecino = _ResultadoParticionQK(
+                        perdida=perdida,
+                        distribucion=distribucion,
+                        asignacion=vecino,
+                        vertices=vertices,
+                    )
+            if mejor_vecino.perdida + 1e-12 >= actual.perdida:
+                break
+            actual = mejor_vecino
+            if actual.perdida < mejor_global.perdida:
+                mejor_global = actual
+        return mejor_global
+
+    def _resolver_k_local(
+        self,
+        vertices: list[tuple[int, int]],
+        k: int,
+    ) -> _ResultadoParticionQK:
+        total_vertices = len(vertices)
+        k_eff = min(k, total_vertices)
+        rng = np.random.default_rng(aplicacion.semilla_numpy + total_vertices)
+
+        asignacion_inicial = self._canonicalizar_asignacion(
+            tuple(list(range(k_eff)) + [int(rng.integers(0, k_eff)) for _ in range(max(0, total_vertices - k_eff))])
+        )
+        perdida_inicial, distribucion_inicial = self._evaluar_k_particion(
+            asignacion_inicial,
+            vertices,
+        )
+        mejor_global = _ResultadoParticionQK(
+            perdida=perdida_inicial,
+            distribucion=distribucion_inicial,
+            asignacion=asignacion_inicial,
+            vertices=vertices,
+        )
+        mejor_global = self._refinar_k_local(mejor_global, vertices, k_eff)
+
+        for _ in range(self._random_restarts_k):
+            permutacion = list(range(k_eff)) + [
+                int(rng.integers(0, k_eff)) for _ in range(max(0, total_vertices - k_eff))
+            ]
+            rng.shuffle(permutacion)
+            asignacion = self._canonicalizar_asignacion(tuple(permutacion))
+            perdida, distribucion = self._evaluar_k_particion(asignacion, vertices)
+            semilla = _ResultadoParticionQK(
+                perdida=perdida,
+                distribucion=distribucion,
+                asignacion=asignacion,
+                vertices=vertices,
+            )
+            refinado = self._refinar_k_local(semilla, vertices, k_eff)
+            if refinado.perdida < mejor_global.perdida:
+                mejor_global = refinado
+
+        return mejor_global
 
 
 # Alias retrocompatible.
