@@ -1,250 +1,217 @@
 # ProyectoAnalisis2026
 
-Proyecto para construir, paso a paso, la logica de busqueda de biparticion optima.
-## 1. Requisitos
+Implementación paso a paso de algoritmos para encontrar la **Partición de Mínima
+Pérdida de Información (MIP)** en sistemas de nodos, en el contexto de la
+Teoría de Información Integrada (IIT).
+
+## ¿Qué hace este proyecto?
+
+Dado un sistema de n nodos con una Matriz de Probabilidades de Transición (TPM),
+encuentra la partición del sistema en grupos de tal forma que se pierda la menor
+cantidad de información posible entre ellos.
+
+Informe completo con ejemplos paso a paso: `review/notas/informe_explicado.md`
+
+---
+
+## Requisitos
 
 - Python 3.11 o superior
 - `pip`
-- Git (opcional, para flujo de commits)
 
-## 2. Clonar y entrar al proyecto
+## Instalación
 
 ```bash
 git clone https://github.com/CamiOso/BiparticionOptima.git
 cd BiparticionOptima
-```
-
-Si ya estas en el workspace local, entra a:
-
-```bash
-cd /home/cami/Desktop/AnalisisDiseñoAlgoritmos/Proyecto/ProyectoAnalisis2026
-```
-
-## 3. Crear y activar entorno virtual
-
-```bash
 python3 -m venv .venv
 source .venv/bin/activate
-```
-
-## 4. Instalar dependencias
-
-```bash
 pip install -r requirements.txt
 ```
 
-Nota:
-- `requirements.txt` esta pinneado con versiones exactas para ejecucion reproducible.
-- Si quieres forzar modo `PyPhi` en la estrategia `Phi`, instala `pyphi` manualmente.
+---
 
-## 5. Ejecutar el proyecto
+## Estrategias implementadas
+
+| Estrategia    | Enfoque                                      | Complejidad   | Exacta |
+|---------------|----------------------------------------------|---------------|--------|
+| FuerzaBruta   | Prueba todas las particiones posibles         | O(2^n)        | Sí     |
+| Phi           | PyPhi si disponible, heurística si no         | —             | Sí/No  |
+| Geometric     | Búsqueda geométrica sobre hipercubo           | O(n·2^n)      | No     |
+| QNodos        | Búsqueda submodular greedy con memoización    | O(n²)         | No     |
+| Circuito      | Eigendescomposición del Laplaciano del grafo  | O(n³)         | No     |
+
+`Geometric` tiene dos modos:
+- `estricto`: solo tabla recursiva, mantiene la cota teórica `O(n·2^n)`.
+- `refinado`: agrega hill-climbing y restarts para máxima precisión.
+
+Todas las estrategias soportan **k-particiones** (k ≥ 2 grupos).
+
+---
+
+## Uso rápido
 
 ```bash
+# Ejecutar todas las estrategias con la red de muestra
 python exec.py
-```
 
-Para ejecutar una estrategia especifica:
-
-```bash
+# Estrategia específica
 python exec.py --estrategia geometric --modo-geometric refinado
 python exec.py --estrategia geometric --modo-geometric estricto
 python exec.py --estrategia fuerza_bruta
 python exec.py --estrategia phi
 python exec.py --estrategia qnodos
+
+# Con estado inicial personalizado
 python exec.py --estrategia geometric --estado-inicial 1000
-python exec.py --estrategia geometric --modo-geometric refinado --output-json review/salidas/geometric_1000.json
+
+# K-particiones (k grupos en vez de 2)
+python exec.py --estrategia geometric --k-particiones 3
+
+# Exportar resultado a JSON
+python exec.py --estrategia geometric --modo-geometric refinado --output-json review/salidas/resultado.json
+
+# Estimar TPM desde muestras temporales (CSV binario)
 python exec.py --estrategia geometric --estado-inicial 1000 --csv-muestras review/salidas/muestras_1000.csv
 ```
 
-Notas de CLI:
+### Usar la estrategia Circuito directamente
 
-- `--estado-inicial` define la cantidad de nodos (longitud del bitstring).
-- La TPM esperada debe cumplir forma `2^n x n` para ese `n`.
-- `--output-json` exporta resultados de la corrida en formato JSON.
-- `--csv-muestras` permite estimar la TPM desde una secuencia temporal CSV binaria
-	(filas=tiempo, columnas=nodos). Si se usa este flag, no se carga `src/.samples/N*A.csv`.
-- El JSON incluye `elapsed_seconds` por estrategia ejecutada.
+```python
+from src.estrategias.circuito import Circuito
+import numpy as np
 
-Si no existe el CSV esperado para el tamano solicitado, el CLI muestra un error claro con la ruta faltante y las muestras disponibles.
+tpm = np.random.rand(8, 3).astype(np.float32)
+c = Circuito(tpm)
 
-Muestras incluidas en `src/.samples/`:
+# Bipartición (k=2)
+sol = c.aplicar_estrategia('101', '111', '111', '111', k=2)
+print(sol)
 
-- `N4A.csv`, `N5A.csv`, `N6A.csv`, `N7A.csv`, `N8A.csv`
+# K-partición (k=3)
+sol_k3 = c.aplicar_estrategia('101', '111', '111', '111', k=3)
+print(sol_k3)
+```
 
-Esto ejecuta `src/main.py` y muestra una demo de:
-- `FuerzaBruta`
-- `Phi` (PyPhi real si esta disponible, o heuristica)
-- `QNodos` (version submodular con memoizacion)
-- `Geometric` (busqueda sobre hipercubo con tabla de costos recursiva)
+---
 
-`Geometric` soporta dos modos:
-- `estricto`: usa solo la tabla recursiva y seleccion geometrica base. Este es el modo que conserva la lectura teorica de complejidad `O(n·2^n)`.
-- `refinado`: agrega refinamiento local y restarts adaptativos para mejorar precision empirica frente a `FuerzaBruta`.
-
-## 6. Correr pruebas
+## Correr pruebas
 
 ```bash
 PYTHONPATH=. python -m pytest -q
-```
 
-Para medir cobertura localmente (mismo criterio que CI):
-
-```bash
+# Con cobertura (mínimo 70%)
 PYTHONPATH=. pytest -q --cov=src --cov-report=term-missing --cov-fail-under=70
 ```
 
-Tambien se incluyen pruebas de CLI (`tests/test_cli.py`) para validar:
+Referencia local (2026-04-04): `39 passed, 1 skipped`, cobertura `76.86%`.
 
-- seleccion de estrategia con `--estrategia`,
-- seleccion de modo geometrico con `--modo-geometric`,
-- manejo de argumentos invalidos.
+---
 
-CI valida automaticamente pruebas + cobertura minima del 70%.
+## Benchmarks y ejemplos
 
-Referencia local verificada (2026-04-04): `39 passed, 1 skipped` y cobertura total `76.86%` con el comando anterior.
-
-## 7. Benchmark de rendimiento (Geometric estricto/refinado vs FuerzaBruta)
+### Geometric vs Fuerza Bruta
 
 ```bash
 PYTHONPATH=. python review/benchmarks/benchmark_geometric.py
 ```
 
-Genera un CSV en:
+Resultados reales (promedio de 3 semillas por tamaño):
 
-`review/benchmarks/geometric_vs_fuerza_bruta.csv`
+| Nodos | Speedup Estricto | Speedup Refinado | Error φ Refinado |
+|-------|-----------------|------------------|-----------------|
+| 5     | 7.9x            | 1.3x             | 0.000           |
+| 6     | 17.0x           | 10.8x            | 0.004           |
+| 7     | 41.9x           | 29.7x            | 0.000           |
+| 8     | 107.1x          | 39.7x            | 0.000           |
 
-con tiempos, speedup y diferencia de phi por corrida (multi-semilla) para:
-
-- `FuerzaBruta`
-- `Geometric` en modo `estricto`
-- `Geometric` en modo `refinado`
-
-Tambien genera:
-
-`review/benchmarks/geometric_vs_fuerza_bruta_resumen.csv`
-
-con promedio y mediana de speedup y `|delta phi|` por tamano de red.
-
-## 8. Ejemplo guiado de 3 variables
-
-Se incluye un ejemplo reproducible que cubre:
-
-- TPM de 3 nodos (`2^3 x 3`)
-- calculo de `gamma = 2^(-d)` para una transicion concreta (`000 -> 011`)
-- ejecucion de `Geometric` para recuperar biparticion optima
-- tabla de costos entre todos los pares de estados del cubo de 3 variables
-
-Comando:
+### Ejemplo guiado de 3 variables
 
 ```bash
 PYTHONPATH=. python review/benchmarks/ejemplo_3_variables.py
 ```
 
-Salida principal generada:
+Genera `review/salidas/tabla_costos_3_variables.csv` con costos `γ = 2^(-d)`
+entre todos los pares de estados del cubo.
 
-`review/salidas/tabla_costos_3_variables.csv`
-
-## 9. Visualizacion del hipercubo y proyecciones (3 variables)
-
-Se incluye un script para generar artefactos visuales del cubo de 3 variables y sus proyecciones marginales.
-
-Comando:
+### Visualización del hipercubo (3 variables)
 
 ```bash
 PYTHONPATH=. python review/benchmarks/visualizacion_3_variables.py
 ```
 
-Salidas:
-
+Genera:
 - `review/salidas/hipercubo_3_variables.svg`
 - `review/salidas/proyecciones_3_variables.csv`
 - `review/salidas/adyacencia_hipercubo_3_variables.csv`
 
-## 10. Benchmark de optimizacion (antes vs despues)
+### Q-Nodos vs Geometric en k-particiones
 
-Para medir el efecto del Paso 10 (muestreo + simetrias + paralelizacion) frente a la ruta base:
+```bash
+PYTHONPATH=. python review/benchmarks/benchmark_k_particiones.py
+```
+
+Resultados (k=3, 5 semillas): Q-Nodos gana en precisión de φ en todos los casos;
+Geometric gana en velocidad (hasta 48x más rápido para 4 nodos).
+
+### Optimización para sistemas grandes (n ≥ 9)
 
 ```bash
 PYTHONPATH=. python review/benchmarks/benchmark_geometric_optimizacion.py
 ```
 
-Genera:
+| Nodos | Speedup con optimización | Error φ promedio |
+|-------|--------------------------|-----------------|
+| 9     | 1.05x                    | 0.006           |
+| 10    | 1.22x                    | 0.000           |
 
-- `review/benchmarks/geometric_optimizacion_detalle.csv`
-- `review/benchmarks/geometric_optimizacion_resumen.csv`
+---
 
-Referencia local (2026-04-04):
+## Estructura del proyecto
 
-- n=9: speedup promedio `1.05x`, delta phi promedio `0.006275`
-- n=10: speedup promedio `1.22x`, delta phi promedio `0.000000`
-
-## 11. Nota tecnica de complejidad
-
-La justificacion formal del modo `estricto` y la distincion frente al modo `refinado` estan en:
-
-`review/notas/complejidad_geometric.md`
-
-## 12. Informe final de resultados
-
-Resumen listo para entrega (metodologia, tablas y conclusiones):
-
-`review/notas/informe_final_geometric.md`
-
-## 13. Estructura principal
-
-```text
+```
 src/
-	constantes/      # Mensajes, etiquetas y configuracion base
-	controladores/   # Carga de TPMs (CSV de muestras)
-	funciones/       # Utilidades IIT, particiones y formato
-	intermedios/     # Logging y perfilado
-	modelos/         # Aplicacion, sistema, ncubo, solucion
-	estrategias/     # FuerzaBruta, Phi, QNodos
-	strategies/      # Geometric
-	main.py          # Orquestador de ejecucion
-exec.py            # Entry point
-tests/             # Suite de pruebas
-.github/workflows/ # CI en GitHub Actions
-review/benchmarks/ # Scripts y salidas de benchmark
-review/notas/      # Notas tecnicas e informe final
+  constantes/      # Etiquetas, mensajes y configuración base
+  controladores/   # Carga de TPMs (desde CSV de muestras)
+  funciones/       # Utilidades IIT, particiones y formato
+  intermedios/     # Logging y perfilado
+  modelos/         # Aplicacion, Sistema, NCube, Solucion
+  estrategias/     # FuerzaBruta, Phi, QNodos, Circuito
+  strategies/      # Geometric
+  main.py          # Orquestador principal
+exec.py            # Entry point CLI
+tests/             # Suite de pruebas automatizadas
+.github/workflows/ # CI (GitHub Actions)
+review/
+  benchmarks/      # Scripts de benchmark y CSVs de resultados
+  salidas/         # Artefactos generados (CSVs, SVGs, JSONs)
+  notas/           # Informes técnicos y análisis
 ```
 
-## 14. Flujo recomendado de trabajo
+---
 
-1. Crear/activar entorno virtual.
-2. Instalar dependencias.
-3. Ejecutar `python exec.py` para validacion rapida.
-4. Ejecutar `PYTHONPATH=. python -m pytest -q` antes de cada commit.
-5. Hacer cambios pequenos, validar, y luego commit/push.
+## Documentación técnica
 
-## 15. Estado actual
+| Documento | Contenido |
+|-----------|-----------|
+| `review/notas/informe_explicado.md`    | Informe completo paso a paso, con ejemplos y tablas reales |
+| `review/notas/informe_final_geometric.md` | Metodología y resultados de Geometric vs FuerzaBruta |
+| `review/notas/complejidad_geometric.md`   | Justificación formal de la complejidad O(n·2^n)         |
 
-- Carpeta y modulos en espanol.
-- Estrategias funcionales con pruebas automatizadas.
-- Estrategia `Geometric` integrada y benchmark reproducible.
-- `Geometric` separado en modo `estricto` y `refinado`.
-- `Geometric` ya incorpora optimizacion para sistemas grandes (muestreo, simetrias y costos en paralelo).
-- `SIA` ya aplica `condicion`, `alcance` y `mecanismo` al preparar subsistema.
-- `Gestor` ya permite estimar TPM desde muestras temporales binarias (`--csv-muestras`).
-- `QNodos` ya usa una logica submodular con memoizacion.
-- `Phi` usa `PyPhi` cuando esta disponible; si no, usa ruta heuristica.
+---
 
-## 16. Comandos rapidos
+## Muestras incluidas
+
+`src/.samples/`: `N4A.csv`, `N5A.csv`, `N6A.csv`, `N7A.csv`, `N8A.csv`
+
+---
+
+## Flujo recomendado
 
 ```bash
-python exec.py --estrategia geometric --modo-geometric refinado
-python exec.py --estrategia geometric --estado-inicial 1000 --csv-muestras review/salidas/muestras_1000.csv
-PYTHONPATH=. python review/benchmarks/ejemplo_3_variables.py
-PYTHONPATH=. python review/benchmarks/visualizacion_3_variables.py
-PYTHONPATH=. python review/benchmarks/benchmark_geometric_optimizacion.py
-PYTHONPATH=. python -m pytest -q
-PYTHONPATH=. python review/benchmarks/benchmark_geometric.py
+source .venv/bin/activate
+python exec.py                          # validación rápida
+PYTHONPATH=. python -m pytest -q        # antes de cada commit
+git add <archivos> && git commit -m "..."
+git push origin main
 ```
-
-## 17. Estado de cierre
-
-Proyecto finalizado para el alcance definido:
-
-- estrategias implementadas y funcionales,
-- evaluacion experimental y reportes generados,
-- documentacion tecnica y de resultados lista para entrega.
