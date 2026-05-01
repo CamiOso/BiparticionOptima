@@ -9,3 +9,5 @@ class TimeEMD(Enum):
     EMD_INTEGRADA = "emd-cause-effect"
     JENSEN_SHANNON = "jensen-shannon"
     KL_DIVERGENCIA = "kl-divergencia"
+    WASSERSTEIN = "wasserstein-sinkhorn"
+    FISHER_RAO = "fisher-rao"

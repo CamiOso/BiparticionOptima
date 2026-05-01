@@ -57,6 +57,83 @@ def jensen_shannon(u: NDArray[np.float32], v: NDArray[np.float32]) -> float:
     return float(np.sqrt(max(0.0, divergencia)))
 
 
+def wasserstein_sinkhorn(
+    u: NDArray[np.float32],
+    v: NDArray[np.float32],
+    reg: float = 0.05,
+    max_iter: int = 200,
+    tol: float = 1e-9,
+) -> float:
+    """Distancia de Wasserstein W1 mediante el algoritmo de Sinkhorn-Knopp.
+
+    Resuelve el problema de transporte optimo regularizado:
+        W_reg(u,v) = min_{T >= 0, T1=u, T^T 1=v} <C, T> + reg * KL(T || u⊗v)
+
+    La matriz de costo C[i,j] = |i-j|/n captura el costo de "mover" activacion
+    del nodo i al nodo j. Con reg pequeño, la solucion se acerca a la Wasserstein
+    exacta; con reg grande, el transporte se suaviza hacia el producto exterior.
+
+    A diferencia del EMD (que es puntual, L1), esta metrica considera la estructura
+    geometrica del espacio de nodos: mover activacion entre nodos adyacentes es mas
+    barato que entre nodos lejanos.
+    """
+    n = len(u)
+    if n == 0:
+        return 0.0
+
+    u64 = np.clip(u.astype(np.float64), 1e-12, None)
+    v64 = np.clip(v.astype(np.float64), 1e-12, None)
+    u64 /= u64.sum()
+    v64 /= v64.sum()
+
+    # Costo normalizado por numero de nodos para que sea invariante a la escala.
+    indices = np.arange(n, dtype=np.float64)
+    C = np.abs(indices[:, None] - indices[None, :]) / max(1, n - 1)
+
+    K = np.exp(-C / reg)
+    b = np.ones(n, dtype=np.float64)
+    a = np.ones(n, dtype=np.float64)
+
+    for _ in range(max_iter):
+        a_prev = a.copy()
+        a = u64 / (K @ b + 1e-300)
+        b = v64 / (K.T @ a + 1e-300)
+        if np.max(np.abs(a - a_prev)) < tol:
+            break
+
+    T = np.diag(a) @ K @ np.diag(b)
+    return float(np.sum(T * C))
+
+
+def fisher_rao(u: NDArray[np.float32], v: NDArray[np.float32]) -> float:
+    """Distancia geodesica de Fisher-Rao sobre la variedad estadistica.
+
+    El espacio de distribuciones de probabilidad es una variedad Riemanniana
+    con metrica de Fisher: g_ij = E[d/dθ_i log p · d/dθ_j log p]. La distancia
+    geodesica entre dos distribuciones es el angulo de Bhattacharyya:
+
+        d_FR(u, v) = 2 · arccos(Σᵢ √(uᵢ · vᵢ))
+
+    Propiedades: es una metrica, varia en [0, π], es 0 solo cuando u = v, y
+    es π cuando u y v tienen soportes disjuntos. Es mas sensible a diferencias
+    en las colas que el EMD y es intrinseca a la geometria del simplex.
+    """
+    u64 = np.clip(u.astype(np.float64), 0.0, None)
+    v64 = np.clip(v.astype(np.float64), 0.0, None)
+
+    su = u64.sum()
+    sv = v64.sum()
+    if su <= 0 or sv <= 0:
+        return 0.0
+
+    u64 /= su
+    v64 /= sv
+
+    coeficiente_bhattacharyya = float(np.sum(np.sqrt(u64 * v64)))
+    coeficiente_bhattacharyya = np.clip(coeficiente_bhattacharyya, 0.0, 1.0)
+    return float(2.0 * np.arccos(coeficiente_bhattacharyya))
+
+
 def kl_divergencia(u: NDArray[np.float32], v: NDArray[np.float32]) -> float:
     """Divergencia KL simetrica (u||v + v||u) / 2.
 
@@ -164,6 +241,8 @@ def seleccionar_emd() -> Callable[[NDArray[np.float32], NDArray[np.float32]], fl
         TimeEMD.EMD_INTEGRADA.value: emd_efecto,
         TimeEMD.JENSEN_SHANNON.value: jensen_shannon,
         TimeEMD.KL_DIVERGENCIA.value: kl_divergencia,
+        TimeEMD.WASSERSTEIN.value: wasserstein_sinkhorn,
+        TimeEMD.FISHER_RAO.value: fisher_rao,
     }
 
     if aplicacion.tiempo_emd not in emd_metricas:
