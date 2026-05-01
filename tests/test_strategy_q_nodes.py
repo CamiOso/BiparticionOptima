@@ -4,7 +4,7 @@ from src.controladores.gestor import Gestor
 from src.funciones.particiones import k_particiones_asignacion
 from src.modelos.base.aplicacion import aplicacion
 from src.modelos.nucleo.solucion import Solucion
-from src.estrategias.q_nodos import QNodos
+from src.estrategias.q_nodos import QNodos, _BuscadorKQNodos
 
 
 def _sample_tpm_4nodes() -> np.ndarray:
@@ -99,9 +99,17 @@ def test_qnodes_k_particiones_exacto_mejora_o_iguala_k2_temporal() -> None:
     )
 
     estrategia.sia_preparar_subsistema("1000", "1111", "1111", "1111")
-    estrategia._cache_k_particiones.clear()
+    assert estrategia.sia_dists_marginales is not None
+    cache_k2: dict = {}
+    buscador_k2 = _BuscadorKQNodos(
+        vertices=vertices,
+        sistema=estrategia.sia_subsistema,
+        dists=estrategia.sia_dists_marginales,
+        distancia_metrica=estrategia.distancia_metrica,
+        cache=cache_k2,
+    )
     mejor_k2 = min(
-        estrategia._evaluar_k_particion(asignacion, vertices)[0]
+        buscador_k2.evaluar_asignacion(asignacion)[0]
         for asignacion in k_particiones_asignacion(len(vertices), 2)
     )
 

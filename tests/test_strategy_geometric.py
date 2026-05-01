@@ -10,7 +10,7 @@ from src.estrategias.fuerza_bruta import FuerzaBruta
 from src.modelos.base.aplicacion import aplicacion
 from src.modelos.enumeraciones.geometric_mode import GeometricMode
 from src.modelos.nucleo.solucion import Solucion
-from src.strategies.geometric import Geometric
+from src.strategies.geometric import Geometric, _BuscadorKGeometric
 
 
 def _sample_tpm_4nodes() -> np.ndarray:
@@ -232,12 +232,21 @@ def test_geometric_k_particiones_exacto_mejora_o_iguala_biparticion_compartida()
 
     geometrica.sia_preparar_subsistema("0000", "1111", "1111", "1111")
     assert geometrica.sia_subsistema is not None
+    assert geometrica.sia_dists_marginales is not None
     nodos = sorted(
         set(int(v) for v in geometrica.sia_subsistema.indices_ncubos.tolist())
         | set(int(v) for v in geometrica.sia_subsistema.dims_ncubos.tolist())
     )
+    cache_k2: dict = {}
+    buscador_k2 = _BuscadorKGeometric(
+        nodos=nodos,
+        sistema=geometrica.sia_subsistema,
+        dists=geometrica.sia_dists_marginales,
+        distancia_metrica=geometrica.distancia_metrica,
+        cache=cache_k2,
+    )
     mejor_k2_compartida = min(
-        geometrica._evaluar_k_particion(asignacion, nodos)[0]
+        buscador_k2.evaluar_asignacion(asignacion)[0]
         for asignacion in k_particiones_asignacion(len(nodos), 2)
     )
 
