@@ -308,7 +308,7 @@ completamente diferente al resto de las estrategias del proyecto.
 
 ---
 
-## Archivos relacionados
+## Archivos relacionados (k-particiones y Circuito)
 
 | Archivo | Descripción |
 |---|---|
@@ -324,3 +324,285 @@ Para reproducir el benchmark:
 source .venv/bin/activate
 PYTHONPATH=. python review/benchmarks/benchmark_k_partitions.py
 ```
+
+---
+
+## Parte 4 — Refactorización: patrón Template Method en la búsqueda de k-particiones
+
+### El problema que se detectó
+
+Al revisar el código de Geometric y Q-Nodos se encontró que ambas estrategias
+tenían exactamente el mismo algoritmo de búsqueda de k-particiones copiado en
+dos lugares distintos: la lógica de canonicalización, generación de vecinos,
+refinamiento local, búsqueda exacta exhaustiva y búsqueda local con restarts.
+
+Tener ese código duplicado es un problema porque cualquier mejora al algoritmo
+hay que hacerla en dos lugares, y si se olvida uno de los dos, el comportamiento
+de las estrategias se desincroniza sin que sea evidente.
+
+### La solución: patrón Template Method
+
+Se creó la clase abstracta `BuscadorKParticion` en `src/funciones/k_particion_buscador.py`.
+Esta clase define el esqueleto del algoritmo de búsqueda pero deja un hueco:
+el método `evaluar_asignacion()`, que es la única parte que realmente difiere
+entre Geometric y Q-Nodos.
+
+```
+BuscadorKParticion (abstracta)
+│
+├── buscar(k, semilla)          ← decide si usar exacto o local según n
+├── _buscar_exacto(k)           ← enumera todas las asignaciones canónicas
+├── _buscar_local(k, semilla)   ← hill-climbing con restarts aleatorios
+├── refinar_local(inicio, k)    ← descenso por vecindad (move one node at a time)
+├── vecinos(asignacion, k)      ← genera movimientos de un nodo a otro grupo
+├── canonicalizar(asignacion)   ← normaliza la etiqueta de grupos (0 aparece primero)
+│
+└── evaluar_asignacion()        ← ABSTRACTO: implementado por cada subclase
+```
+
+Las subclases concretas que se crearon:
+
+**`_BuscadorKGeometric`**: evalúa usando `sistema.k_bipartir(nodos, asignacion)`,
+donde los nodos son índices enteros (espacio espacial).
+
+**`_BuscadorKQNodos`**: evalúa usando `sistema.k_bipartir_temporal(grupos_mec, grupos_alc)`,
+donde los vértices son pares `(tiempo, índice)` (espacio temporal).
+
+Con este cambio, las ~120 líneas de código duplicado desaparecieron. Si se mejora
+el algoritmo de búsqueda (por ejemplo, cambiar la temperatura de los restarts o
+el criterio de convergencia), el cambio se hace una sola vez en `BuscadorKParticion`
+y ambas estrategias se benefician automáticamente.
+
+---
+
+## Parte 5 — Recocido simulado como búsqueda alternativa de k-particiones
+
+### La limitación de la búsqueda local codiciosa
+
+La búsqueda local (hill-climbing) que usan Geometric y Q-Nodos tiene una debilidad
+conocida: puede quedar atrapada en un mínimo local. Si la pérdida de la asignación
+actual es `φ = 0.35` y ningún movimiento individual (mover un nodo a otro grupo)
+la mejora, el algoritmo se detiene aunque exista una asignación con `φ = 0.20`
+que requeriría mover varios nodos a la vez para llegar a ella.
+
+### Recocido simulado: aceptar soluciones peores a propósito
+
+La clase `BuscadorKRecocido` implementa el algoritmo de recocido simulado
+(Simulated Annealing), que resuelve este problema aceptando soluciones peores
+con una probabilidad que disminuye con el tiempo:
+
+```
+P(aceptar peor solución) = exp(-Δφ / T)
+```
+
+Donde `Δφ` es cuánto peora la solución y `T` es la temperatura actual. Al
+principio (T alta), el algoritmo acepta casi cualquier movimiento y explora
+el espacio libremente. Con el tiempo, T baja y el algoritmo se vuelve cada
+vez más selectivo, hasta comportarse casi como hill-climbing puro.
+
+```python
+from src.funciones.k_particion_buscador import BuscadorKRecocido
+
+# BuscadorKRecocido implementa la misma interfaz que BuscadorKParticion.
+# Solo necesita implementar evaluar_asignacion() como cualquier otra subclase.
+```
+
+El esquema de enfriamiento usado es geométrico: `T_{nueva} = T * factor`,
+con `factor = 0.92` por defecto, lo que da un descenso suave.
+
+---
+
+## Parte 6 — Nuevas métricas de distancia entre distribuciones
+
+Hasta ahora todas las estrategias usaban como métrica el EMD simplificado
+(`Σ|u - v|`, equivalente a L1). Se agregaron cuatro métricas nuevas que
+tienen propiedades matemáticas distintas y pueden cambiar qué partición
+se considera óptima para un sistema dado.
+
+### Jensen-Shannon
+
+La divergencia JS entre distribuciones p y q se define como:
+
+```
+JS(p, q) = (1/2) KL(p || m) + (1/2) KL(q || m)    donde m = (p+q)/2
+```
+
+Es simétrica (JS(p,q) = JS(q,p)) y acotada en [0, log(2)]. Se implementa
+como su raíz cuadrada, que es una métrica válida (cumple desigualdad triangular).
+
+### KL divergencia simétrica
+
+La KL clásica no es simétrica. Se usó la versión simetrizad:
+
+```
+KL_sim(p, q) = (KL(p||q) + KL(q||p)) / 2
+```
+
+Es más estricta que el EMD: si `q` tiene probabilidad cero donde `p` no,
+la divergencia es infinita. Útil para detectar particiones que colapsan estados.
+
+### Wasserstein con Sinkhorn
+
+La distancia de Wasserstein W1 resuelve un problema de transporte óptimo:
+¿cuánto cuesta mover la masa de la distribución `u` para transformarla en `v`,
+donde el costo de mover masa del nodo i al nodo j es `|i-j|/n`?
+
+Se implementa con el algoritmo de Sinkhorn-Knopp, que resuelve una versión
+regularizada en tiempo O(n²) con iteraciones matriciales:
+
+```
+K = exp(-C / ε)     (núcleo del transporte)
+iteración: a = u / (K b),   b = v / (K^T a)
+T_óptimo = diag(a) K diag(b)
+W_ε = <C, T_óptimo>
+```
+
+### Fisher-Rao
+
+El espacio de distribuciones de probabilidad es una variedad Riemanniana
+con métrica de Fisher. La distancia geodésica entre dos distribuciones
+en esa variedad es el ángulo de Bhattacharyya:
+
+```
+d_FR(p, q) = 2 · arccos(Σᵢ √(pᵢ · qᵢ))
+```
+
+Varía entre 0 (distribuciones idénticas) y π (soportes disjuntos).
+Es invariante a reparametrizaciones y más sensible que L1 en las colas.
+
+---
+
+## Parte 7 — Entropías de orden superior
+
+Se implementaron las dos generalizaciones paramétricas más importantes de
+la entropía de Shannon, en `src/funciones/entropia.py`.
+
+### Entropía de Rényi
+
+```
+H_α(X) = 1/(1-α) · log₂(Σᵢ pᵢᵅ)
+```
+
+Para α → 1 converge a Shannon (por L'Hôpital). Casos especiales:
+- α = 0: log₂(|soporte|) — solo cuenta cuántos estados son posibles
+- α = 2: información de colisión — cuánto se superponen dos muestras aleatorias
+- α → ∞: -log₂(max p) — entropía mín, solo mira el estado más probable
+
+### Entropía de Tsallis
+
+```
+S_q(X) = (1 - Σᵢ pᵢq) / (q - 1)
+```
+
+A diferencia de Rényi, Tsallis no es extensiva: para sistemas independientes
+A y B, `S_q(AB) = S_q(A) + S_q(B) + (1-q)·S_q(A)·S_q(B)`. Ese término
+cruzado captura correlaciones de largo alcance, lo que la hace relevante
+para sistemas con dependencias fuertes como los que modela IIT.
+
+### Perfil de entropías
+
+```python
+perfil = perfil_entropia(p)
+# {0.0: 2.0, 0.5: 1.799, 1.0: 1.648, 2.0: 1.454, 5.0: 1.222}
+```
+
+El perfil describe la forma de la distribución: una curva plana indica
+distribución uniforme; una curva con caída pronunciada indica alta concentración.
+
+---
+
+## Parte 8 — O-information y correlación total
+
+La información mutua clásica I(X;Y) mide dependencia entre dos variables.
+Para sistemas de n variables existe una generalización que captura efectos
+colectivos que no aparecen en las parejas, implementada en
+`src/funciones/informacion_superior.py`.
+
+### Correlación total (TC)
+
+```
+TC(X₁,...,Xₙ) = Σᵢ H(Xᵢ) - H(X₁,...,Xₙ)    ≥ 0
+```
+
+Mide la información total compartida entre todos los nodos. Es cero si y
+solo si todos los nodos son independientes.
+
+### O-information
+
+```
+Ω(X) = (n-2)·H(X) - Σᵢ H(Xᵢ) + Σᵢ<ⱼ H(Xᵢ,Xⱼ)
+```
+
+El signo de Ω determina el carácter del sistema:
+- **Ω > 0**: redundancia dominante — varios nodos codifican la misma información
+- **Ω < 0**: sinergia dominante — la información conjunta supera la suma de las partes
+- **Ω = 0**: balance entre redundancia y sinergia
+
+La sinergia tiene relación directa con φ de IIT: un sistema sinérgico es más
+resistente a ser partido porque pierde información que solo existe en el todo.
+Al hacer la bipartición, se destruye precisamente esa información sinérgica.
+
+### Matriz de dependencia
+
+```python
+mat = matriz_dependencia(tpm, estado_inicial)
+# Matriz n×n: mat[i,j] = I(Xi; Xj)  (información mutua entre cada par)
+# Diagonal: mat[i,i] = H(Xi)
+```
+
+Permite identificar visualmente qué pares de nodos comparten más información
+y cuáles son prácticamente independientes, lo que da pistas sobre dónde
+conviene hacer el corte.
+
+---
+
+## Parte 9 — Análisis espectral de la TPM
+
+La TPM define un proceso de Markov sobre {0,1}^n. Su eigendescomposición
+revela la dinámica de largo plazo del sistema, implementada en
+`src/herramientas/espectral.py`.
+
+### Construcción de la matriz de transición completa
+
+La TPM tiene formato (2^n × n): cada fila es un estado del sistema y cada
+columna es la probabilidad de que el nodo i esté encendido en el siguiente paso.
+Para el análisis espectral se necesita la matriz completa P (2^n × 2^n), donde
+P[s, s'] = P(X_{t+1} = s' | X_t = s).
+
+Bajo independencia condicional entre nodos, esta se calcula como el producto
+de las probabilidades individuales de cada nodo.
+
+### Interpretación de los eigenvalores
+
+El Teorema de Perron-Frobenius garantiza que el eigenvalor dominante es 1
+y su eigenvector asociado es la distribución estacionaria π (el estado al
+que converge el sistema sin importar desde dónde empiece).
+
+El segundo eigenvalor |λ₂| determina la velocidad de convergencia:
+- **Brecha espectral**: gap = 1 - |λ₂|
+- **Tiempo de mezcla**: t_mix ≤ log(1/ε) / gap
+
+Un sistema con gap ≈ 0 (|λ₂| ≈ 1) tiene memoria larga: tarda muchos pasos
+en olvidar su estado inicial. Eso se correlaciona con alta irreducibilidad
+en IIT: si el sistema recuerda de dónde viene, partirlo destruye esa memoria.
+
+### Entropía de la distribución estacionaria
+
+La entropía de Shannon de π indica cuántos estados son accesibles a largo plazo.
+Un sistema con H(π) alto visita muchos estados; uno con H(π) bajo se concentra
+en pocos atractores.
+
+---
+
+## Resumen de todo el trabajo
+
+| Módulo / Archivo | Qué aporta |
+|---|---|
+| `src/funciones/k_particion_buscador.py` | `BuscadorKParticion` (Template Method) + `BuscadorKRecocido` (SA) |
+| `src/funciones/iit.py` | Jensen-Shannon, KL simétrica, Wasserstein-Sinkhorn, Fisher-Rao |
+| `src/funciones/entropia.py` | Rényi, Tsallis, perfil de entropías, divergencia de Rényi |
+| `src/funciones/informacion_superior.py` | O-information, correlación total, matriz de dependencia |
+| `src/herramientas/espectral.py` | Eigenvalores, π estacionaria, brecha espectral, tiempo de mezcla |
+| `src/herramientas/benchmark.py` | Comparación automática de estrategias con tabla de resultados |
+| `src/visualizacion/particion.py` | Gráficas de bipartición, k-partición y comparación de pérdidas |
+| `src/controladores/gestor.py` | Estimación bayesiana de TPM con prior de Dirichlet |

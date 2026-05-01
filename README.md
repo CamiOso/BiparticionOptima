@@ -1,14 +1,14 @@
 # ProyectoAnalisis2026
 
-Implementación paso a paso de algoritmos para encontrar la **Partición de Mínima
-Pérdida de Información (MIP)** en sistemas de nodos, en el contexto de la
-Teoría de Información Integrada (IIT).
+Implementación de algoritmos para encontrar la **Partición de Mínima Pérdida de
+Información (MIP)** en sistemas de nodos, en el contexto de la Teoría de
+Información Integrada (IIT).
 
 ## ¿Qué hace este proyecto?
 
 Dado un sistema de n nodos con una Matriz de Probabilidades de Transición (TPM),
 encuentra la partición del sistema en grupos de tal forma que se pierda la menor
-cantidad de información posible entre ellos.
+cantidad de información posible entre ellos (φ mínimo).
 
 Informe completo con ejemplos paso a paso: `review/notas/informe_explicado.md`
 
@@ -33,13 +33,13 @@ pip install -r requirements.txt
 
 ## Estrategias implementadas
 
-| Estrategia    | Enfoque                                      | Complejidad   | Exacta |
-|---------------|----------------------------------------------|---------------|--------|
-| FuerzaBruta   | Prueba todas las particiones posibles         | O(2^n)        | Sí     |
-| Phi           | PyPhi si disponible, heurística si no         | —             | Sí/No  |
-| Geometric     | Búsqueda geométrica sobre hipercubo           | O(n·2^n)      | No     |
-| QNodos        | Búsqueda submodular greedy con memoización    | O(n²)         | No     |
-| Circuito      | Eigendescomposición del Laplaciano del grafo  | O(n³)         | No     |
+| Estrategia    | Enfoque                                       | Complejidad   | Exacta |
+|---------------|-----------------------------------------------|---------------|--------|
+| FuerzaBruta   | Prueba todas las particiones posibles          | O(2^n)        | Sí     |
+| Phi           | PyPhi si disponible, heurística si no          | —             | Sí/No  |
+| Geometric     | Búsqueda geométrica sobre hipercubo            | O(n·2^n)      | No     |
+| QNodos        | Búsqueda submodular greedy con memoización     | O(n²)         | No     |
+| Circuito      | Eigendescomposición del Laplaciano del grafo   | O(n³)         | No     |
 
 `Geometric` tiene dos modos:
 - `estricto`: solo tabla recursiva, mantiene la cota teórica `O(n·2^n)`.
@@ -75,22 +75,153 @@ python exec.py --estrategia geometric --modo-geometric refinado --output-json re
 python exec.py --estrategia geometric --estado-inicial 1000 --csv-muestras review/salidas/muestras_1000.csv
 ```
 
-### Usar la estrategia Circuito directamente
+---
+
+## Métricas de distancia disponibles
+
+La distancia entre distribuciones se configura mediante `aplicacion.set_tiempo_emd()`:
+
+| Métrica              | Enum                       | Descripción |
+|----------------------|----------------------------|-------------|
+| EMD efecto (default) | `TimeEMD.EMD_EFECTO`       | L1 simplificado: Σ\|u-v\| |
+| Jensen-Shannon       | `TimeEMD.JENSEN_SHANNON`   | √(JS divergence), simétrica, acotada |
+| KL divergencia       | `TimeEMD.KL_DIVERGENCIA`   | KL simétrica (u\|\|v + v\|\|u) / 2 |
+| Wasserstein-Sinkhorn | `TimeEMD.WASSERSTEIN`      | Transporte óptimo regularizado |
+| Fisher-Rao           | `TimeEMD.FISHER_RAO`       | Distancia geodésica en variedad estadística |
 
 ```python
-from src.estrategias.circuito import Circuito
-import numpy as np
+from src.modelos.base.aplicacion import aplicacion
+from src.modelos.enumeraciones.emd_temporal import TimeEMD
 
-tpm = np.random.rand(8, 3).astype(np.float32)
-c = Circuito(tpm)
+aplicacion.set_tiempo_emd(TimeEMD.JENSEN_SHANNON)
+```
 
-# Bipartición (k=2)
-sol = c.aplicar_estrategia('101', '111', '111', '111', k=2)
-print(sol)
+---
 
-# K-partición (k=3)
-sol_k3 = c.aplicar_estrategia('101', '111', '111', '111', k=3)
-print(sol_k3)
+## Módulos de análisis matemático
+
+### Entropías de orden superior
+
+```python
+from src.funciones.entropia import shannon, renyi, tsallis, perfil_entropia
+
+p = np.array([0.5, 0.3, 0.15, 0.05], dtype=np.float32)
+
+shannon(p)           # Entropía de Shannon H(X)
+renyi(p, alpha=2.0)  # Entropía de Rényi H_α(X) — para α=2: información de colisión
+tsallis(p, q=2.0)    # Entropía de Tsallis S_q(X) — no extensiva, útil en sistemas complejos
+perfil_entropia(p)   # Tabla H_α para varios órdenes α (describe la forma de la distribución)
+```
+
+### Información mutua de orden superior
+
+```python
+from src.funciones.informacion_superior import o_information, matriz_dependencia
+
+# O-information: mide si el sistema es redundante (Ω > 0) o sinérgico (Ω < 0)
+resultado = o_information(tpm, estado_inicial)
+print(resultado["o_information"])   # Ω
+print(resultado["correlacion_total"])  # TC = Σ H(Xi) - H(X)
+print(resultado["tipo"])            # "redundancia" | "sinergia" | "neutral"
+
+# Matriz n×n de información mutua I(Xi; Xj) entre todos los pares
+mat = matriz_dependencia(tpm, estado_inicial)
+```
+
+### Análisis espectral de la TPM
+
+```python
+from src.herramientas.espectral import analizar_tpm
+
+resultado = analizar_tpm(tpm)
+resultado.imprimir()
+
+# Acceso directo a los valores
+resultado.brecha_espectral        # gap = 1 - |λ₂| (velocidad de convergencia)
+resultado.tiempo_mezcla_cota      # pasos para estar ε-cerca de la distribución límite
+resultado.distribucion_estacionaria  # π tal que π P = π
+resultado.es_ergodica             # True si todos los estados son accesibles
+```
+
+### Benchmark automatizado
+
+```python
+from src.herramientas.benchmark import Benchmark
+
+bench = Benchmark(tpm, k=2)
+resultado = bench.ejecutar(estados=["1000", "0100", "1100"])
+resultado.imprimir()    # tabla con pérdida y tiempo por estrategia
+resultado.resumen()     # estadísticas agregadas por estrategia
+```
+
+### Visualización de particiones
+
+```python
+from src.visualizacion.particion import (
+    dibujar_biparticion,
+    dibujar_k_particion,
+    dibujar_comparacion_perdidas,
+)
+
+# Bipartición como grafo bipartito mecanismo → alcance
+dibujar_biparticion(
+    subalcance=(0, 1), submecanismo=(0,),
+    alcance_total=(0, 1, 2), mecanismo_total=(0, 1, 2),
+    perdida=0.25,
+    guardar_en="review/salidas/biparticion.png",
+)
+
+# K-partición con nodos coloreados por grupo
+dibujar_k_particion(
+    nodos=[0, 1, 2, 3], asignacion=(0, 0, 1, 1),
+    alcance_total=(0, 1, 2, 3), mecanismo_total=(0, 1, 2, 3),
+    perdida=0.125,
+    guardar_en="review/salidas/k_particion.png",
+)
+
+# Gráfica de barras comparando pérdidas entre estrategias
+dibujar_comparacion_perdidas(
+    {"FuerzaBruta": 0.25, "QNodos": 0.25, "Geometric": 0.25},
+    guardar_en="review/salidas/comparacion.png",
+)
+```
+
+### Estimación bayesiana de la TPM
+
+```python
+from src.controladores.gestor import Gestor
+
+gestor = Gestor(estado_inicial="1000")
+muestras = np.array([[1,0,0,0],[0,1,0,0],[0,0,1,0]], dtype=np.int8)
+
+# Estimación frecuentista (máxima verosimilitud)
+tpm_ml = gestor.construir_tpm_desde_muestras(muestras)
+
+# Estimación bayesiana con prior de Dirichlet (alpha=1.0: prior de Laplace)
+tpm_bayes = gestor.construir_tpm_bayesiana(muestras, alpha=1.0)
+# alpha pequeño → confía más en los datos; alpha grande → suaviza hacia 0.5
+```
+
+---
+
+## Arquitectura interna: patrón Template Method en k-particiones
+
+La búsqueda de k-particiones está centralizada en `BuscadorKParticion` (Template Method).
+La clase base define el algoritmo completo (búsqueda exacta para sistemas pequeños,
+búsqueda local con restarts para sistemas grandes). Cada estrategia implementa
+solo `evaluar_asignacion()`, que es la única parte que difiere entre ellas.
+
+```
+BuscadorKParticion  (abstracta)
+├── buscar()             — decide exacto vs local según tamaño del sistema
+├── _buscar_exacto()     — enumeración exhaustiva (umbral configurable)
+├── _buscar_local()      — hill-climbing + restarts aleatorios
+├── refinar_local()      — descenso por vecindad en el espacio de asignaciones
+└── evaluar_asignacion() — abstracto: cada estrategia lo implementa distinto
+
+_BuscadorKGeometric  → usa k_bipartir      (nodos espaciales: list[int])
+_BuscadorKQNodos     → usa k_bipartir_temporal (vértices temporales: list[tuple])
+BuscadorKRecocido    → recocido simulado (acepta peores soluciones con prob. e^{-Δ/T})
 ```
 
 ---
@@ -104,8 +235,6 @@ PYTHONPATH=. python -m pytest -q
 PYTHONPATH=. pytest -q --cov=src --cov-report=term-missing --cov-fail-under=70
 ```
 
-Referencia local (2026-04-04): `39 passed, 1 skipped`, cobertura `76.86%`.
-
 ---
 
 ## Benchmarks y ejemplos
@@ -116,34 +245,12 @@ Referencia local (2026-04-04): `39 passed, 1 skipped`, cobertura `76.86%`.
 PYTHONPATH=. python review/benchmarks/benchmark_geometric.py
 ```
 
-Resultados reales (promedio de 3 semillas por tamaño):
-
 | Nodos | Speedup Estricto | Speedup Refinado | Error φ Refinado |
 |-------|-----------------|------------------|-----------------|
-| 5     | 7.9x            | 1.3x             | 0.000           |
-| 6     | 17.0x           | 10.8x            | 0.004           |
-| 7     | 41.9x           | 29.7x            | 0.000           |
-| 8     | 107.1x          | 39.7x            | 0.000           |
-
-### Ejemplo guiado de 3 variables
-
-```bash
-PYTHONPATH=. python review/benchmarks/ejemplo_3_variables.py
-```
-
-Genera `review/salidas/tabla_costos_3_variables.csv` con costos `γ = 2^(-d)`
-entre todos los pares de estados del cubo.
-
-### Visualización del hipercubo (3 variables)
-
-```bash
-PYTHONPATH=. python review/benchmarks/visualizacion_3_variables.py
-```
-
-Genera:
-- `review/salidas/hipercubo_3_variables.svg`
-- `review/salidas/proyecciones_3_variables.csv`
-- `review/salidas/adyacencia_hipercubo_3_variables.csv`
+| 5     | 7.9×            | 1.3×             | 0.000           |
+| 6     | 17.0×           | 10.8×            | 0.004           |
+| 7     | 41.9×           | 29.7×            | 0.000           |
+| 8     | 107.1×          | 39.7×            | 0.000           |
 
 ### Q-Nodos vs Geometric en k-particiones
 
@@ -151,19 +258,11 @@ Genera:
 PYTHONPATH=. python review/benchmarks/benchmark_k_particiones.py
 ```
 
-Resultados (k=3, 5 semillas): Q-Nodos gana en precisión de φ en todos los casos;
-Geometric gana en velocidad (hasta 48x más rápido para 4 nodos).
-
-### Optimización para sistemas grandes (n ≥ 9)
-
-```bash
-PYTHONPATH=. python review/benchmarks/benchmark_geometric_optimizacion.py
-```
-
-| Nodos | Speedup con optimización | Error φ promedio |
-|-------|--------------------------|-----------------|
-| 9     | 1.05x                    | 0.006           |
-| 10    | 1.22x                    | 0.000           |
+| Nodos | Speedup Geometric (k=3) | Quién gana en φ |
+|-------|------------------------|-----------------|
+| 4     | 48×                    | Q-Nodos         |
+| 5     | 22×                    | Q-Nodos         |
+| 6     | 10×                    | Q-Nodos         |
 
 ---
 
@@ -171,21 +270,32 @@ PYTHONPATH=. python review/benchmarks/benchmark_geometric_optimizacion.py
 
 ```
 src/
-  constantes/      # Etiquetas, mensajes y configuración base
-  controladores/   # Carga de TPMs (desde CSV de muestras)
-  funciones/       # Utilidades IIT, particiones y formato
-  intermedios/     # Logging y perfilado
-  modelos/         # Aplicacion, Sistema, NCube, Solucion
-  estrategias/     # FuerzaBruta, Phi, QNodos, Circuito
-  strategies/      # Geometric
-  main.py          # Orquestador principal
-exec.py            # Entry point CLI
-tests/             # Suite de pruebas automatizadas
-.github/workflows/ # CI (GitHub Actions)
+  constantes/         # Etiquetas, mensajes y configuración base
+  controladores/      # Gestor: carga y estimación (ML y bayesiana) de TPMs
+  funciones/
+    iit.py            # EMD, Jensen-Shannon, KL, Wasserstein, Fisher-Rao
+    entropia.py       # Shannon, Rényi, Tsallis, perfil de entropías
+    informacion_superior.py  # O-information, correlación total, matriz de dependencia
+    k_particion_buscador.py  # BuscadorKParticion, BuscadorKRecocido (SA)
+    particiones.py    # Generadores de biparticiones y k-particiones
+    formato.py        # Renderizado de soluciones y particiones
+  intermedios/        # Logging y perfilado
+  modelos/            # Aplicacion (singleton), Sistema, NCube, Solucion
+  estrategias/        # FuerzaBruta, Phi, QNodos, Circuito
+  strategies/         # Geometric
+  visualizacion/
+    particion.py      # Gráficas de bipartición, k-partición y comparación
+  herramientas/
+    benchmark.py      # Benchmark comparativo automático
+    espectral.py      # Análisis espectral: eigenvalores, distribución estacionaria
+  main.py             # Orquestador principal
+exec.py               # Entry point CLI
+tests/                # Suite de pruebas automatizadas
+.github/workflows/    # CI (GitHub Actions)
 review/
-  benchmarks/      # Scripts de benchmark y CSVs de resultados
-  salidas/         # Artefactos generados (CSVs, SVGs, JSONs)
-  notas/           # Informes técnicos y análisis
+  benchmarks/         # Scripts de benchmark y CSVs de resultados
+  salidas/            # Artefactos generados (CSVs, SVGs, JSONs, PNGs)
+  notas/              # Informes técnicos y bitácoras
 ```
 
 ---
@@ -194,9 +304,10 @@ review/
 
 | Documento | Contenido |
 |-----------|-----------|
-| `review/notas/informe_explicado.md`    | Informe completo paso a paso, con ejemplos y tablas reales |
-| `review/notas/informe_final_geometric.md` | Metodología y resultados de Geometric vs FuerzaBruta |
-| `review/notas/complejidad_geometric.md`   | Justificación formal de la complejidad O(n·2^n)         |
+| `review/notas/informe_explicado.md`       | Informe completo paso a paso con tablas reales |
+| `review/notas/informe_final_geometric.md` | Metodología y resultados Geometric vs FuerzaBruta |
+| `review/notas/complejidad_geometric.md`   | Justificación formal de la complejidad O(n·2^n) |
+| `review/notas/bitacora_k_particiones.md`  | Desarrollo de k-particiones, Circuito y nuevas herramientas |
 
 ---
 
