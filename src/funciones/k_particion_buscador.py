@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+import math
 
 import numpy as np
 
@@ -135,5 +136,89 @@ class BuscadorKParticion(ABC):
             refinado = self.refinar_local(semilla_local, k)
             if refinado.perdida < mejor.perdida:
                 mejor = refinado
+
+        return mejor
+
+
+class BuscadorKRecocido(BuscadorKParticion):
+    """Busqueda de k-particion usando recocido simulado (Simulated Annealing).
+
+    A diferencia de la busqueda local codiciosa, acepta soluciones peores con
+    probabilidad exp(-delta/T), donde T disminuye geometricamente. Esto permite
+    escapar de minimos locales que atrapan a los buscadores voraces.
+
+    Parametros de enfriamiento:
+        temp_inicial: temperatura de arranque (controla la exploracion inicial).
+        temp_final: criterio de parada por temperatura.
+        factor_enfriamiento: multiplicador por ciclo (0 < factor < 1).
+        pasos_por_temp: evaluaciones por nivel de temperatura.
+    """
+
+    def __init__(
+        self,
+        temp_inicial: float = 1.0,
+        temp_final: float = 0.001,
+        factor_enfriamiento: float = 0.92,
+        pasos_por_temp: int = 30,
+    ) -> None:
+        super().__init__(umbral_exacto=6, max_iter_refinamiento=0, max_restarts=0)
+        self.temp_inicial = temp_inicial
+        self.temp_final = temp_final
+        self.factor_enfriamiento = factor_enfriamiento
+        self.pasos_por_temp = pasos_por_temp
+
+    def buscar(self, k: int, semilla: int = 42) -> ResultadoKParticion:
+        n = self.total_elementos()
+        k_eff = min(k, n)
+        if n <= self.umbral_exacto:
+            return self._buscar_exacto(k_eff)
+        return self._recocido(k_eff, semilla)
+
+    def _recocido(self, k: int, semilla: int) -> ResultadoKParticion:
+        n = self.total_elementos()
+        rng = np.random.default_rng(semilla)
+
+        asig_actual = self.canonicalizar(
+            tuple(list(range(k)) + [int(rng.integers(0, k)) for _ in range(max(0, n - k))])
+        )
+        perm = list(asig_actual)
+        rng.shuffle(perm)
+        asig_actual = self.canonicalizar(tuple(perm))
+
+        perdida_actual, dist_actual = self.evaluar_asignacion(asig_actual)
+        mejor = ResultadoKParticion(
+            perdida=perdida_actual,
+            distribucion=dist_actual,
+            asignacion=asig_actual,
+        )
+
+        temp = self.temp_inicial
+        while temp > self.temp_final:
+            for _ in range(self.pasos_por_temp):
+                idx = int(rng.integers(0, n))
+                nuevo_grupo = int(rng.integers(0, k))
+                nueva = list(asig_actual)
+                nueva[idx] = nuevo_grupo
+                asig_vecina = self.canonicalizar(tuple(nueva))
+
+                if len(set(asig_vecina)) < 2:
+                    continue
+
+                perdida_vecina, dist_vecina = self.evaluar_asignacion(asig_vecina)
+                delta = perdida_vecina - perdida_actual
+
+                if delta < 0 or rng.random() < math.exp(-delta / temp):
+                    asig_actual = asig_vecina
+                    perdida_actual = perdida_vecina
+                    dist_actual = dist_vecina
+
+                    if perdida_actual < mejor.perdida:
+                        mejor = ResultadoKParticion(
+                            perdida=perdida_actual,
+                            distribucion=dist_actual,
+                            asignacion=asig_actual,
+                        )
+
+            temp *= self.factor_enfriamiento
 
         return mejor

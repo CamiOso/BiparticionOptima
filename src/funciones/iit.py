@@ -40,6 +40,37 @@ def emd_causal(u: NDArray[np.float32], v: NDArray[np.float32]) -> float:
     return float(np.sum(np.abs(u - v)))
 
 
+def jensen_shannon(u: NDArray[np.float32], v: NDArray[np.float32]) -> float:
+    """Distancia Jensen-Shannon entre dos distribuciones de probabilidad.
+
+    Raiz cuadrada de la divergencia JS, lo que la hace una metrica valida.
+    Penaliza diferencias de forma no lineal: es mas sensible a divergencias
+    extremas que el EMD, util para detectar particiones que destruyen
+    estructuras de dependencia asimetrica.
+    """
+    u_safe = np.clip(u.astype(np.float64), 1e-12, None)
+    v_safe = np.clip(v.astype(np.float64), 1e-12, None)
+    m = 0.5 * (u_safe + v_safe)
+    divergencia = 0.5 * (
+        np.sum(u_safe * np.log(u_safe / m)) + np.sum(v_safe * np.log(v_safe / m))
+    )
+    return float(np.sqrt(max(0.0, divergencia)))
+
+
+def kl_divergencia(u: NDArray[np.float32], v: NDArray[np.float32]) -> float:
+    """Divergencia KL simetrica (u||v + v||u) / 2.
+
+    Mide cuanta informacion se pierde al aproximar u con v y viceversa.
+    A diferencia del EMD, es infinita si v tiene ceros donde u no los tiene,
+    lo que la hace mas estricta para particiones que colapsan distribuciones.
+    """
+    u_safe = np.clip(u.astype(np.float64), 1e-12, None)
+    v_safe = np.clip(v.astype(np.float64), 1e-12, None)
+    kl_uv = float(np.sum(u_safe * np.log(u_safe / v_safe)))
+    kl_vu = float(np.sum(v_safe * np.log(v_safe / u_safe)))
+    return (kl_uv + kl_vu) / 2.0
+
+
 def contar_bits(numero: int) -> int:
     return bin(numero).count("1")
 
@@ -126,11 +157,13 @@ def generar_combinaciones(a: str) -> list[tuple[str, str, str]]:
 
 
 def seleccionar_emd() -> Callable[[NDArray[np.float32], NDArray[np.float32]], float]:
-    """Selecciona la funcion de distancia EMD segun la configuracion global."""
+    """Selecciona la funcion de distancia segun la configuracion global."""
     emd_metricas = {
         TimeEMD.EMD_EFECTO.value: emd_efecto,
         TimeEMD.EMD_CAUSA.value: emd_causal,
         TimeEMD.EMD_INTEGRADA.value: emd_efecto,
+        TimeEMD.JENSEN_SHANNON.value: jensen_shannon,
+        TimeEMD.KL_DIVERGENCIA.value: kl_divergencia,
     }
 
     if aplicacion.tiempo_emd not in emd_metricas:

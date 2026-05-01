@@ -118,6 +118,55 @@ class Gestor:
             valor_no_observado=valor_no_observado,
         )
 
+    def construir_tpm_bayesiana(
+        self,
+        muestras: np.ndarray,
+        alpha: float = 1.0,
+    ) -> np.ndarray:
+        """Estima la TPM con suavizado bayesiano usando un prior de Dirichlet.
+
+        En lugar de usar frecuencias relativas puras (estimador de maxima
+        verosimilitud), suma un pseudoconteo alpha a cada par estado->nodo.
+        Esto evita probabilidades exactamente 0 o 1 cuando los datos son
+        escasos, lo que hace la TPM mas robusta para calcular divergencias
+        como Jensen-Shannon o KL que son indefinidas en esos extremos.
+
+        alpha = 1.0  -> prior uniforme de Laplace (el mas neutral)
+        alpha < 1.0  -> prior que concentra la masa en los extremos (mas informativo)
+        alpha > 1.0  -> prior que suaviza mas agresivamente hacia 0.5
+        """
+        if muestras.ndim != 2:
+            raise ValueError("Las muestras deben ser una matriz 2D.")
+        if muestras.shape[0] < 2:
+            raise ValueError("Se requieren al menos 2 filas.")
+        if muestras.shape[1] != len(self.estado_inicial):
+            raise ValueError(
+                f"Columnas invalidas: se esperaban {len(self.estado_inicial)} "
+                f"y llegaron {muestras.shape[1]}."
+            )
+        if not np.isin(muestras, [0, 1]).all():
+            raise ValueError("Las muestras deben ser binarias (solo 0 y 1).")
+        if alpha <= 0:
+            raise ValueError(f"alpha debe ser positivo, se recibio {alpha}.")
+
+        num_nodos = muestras.shape[1]
+        num_estados = 1 << num_nodos
+        pesos = (1 << np.arange(num_nodos - 1, -1, -1)).astype(np.int64)
+
+        estados_t = muestras[:-1].astype(np.int64, copy=False)
+        estados_t1 = muestras[1:].astype(np.float64, copy=False)
+        indices_t = (estados_t * pesos).sum(axis=1)
+
+        # Conteo de observaciones por estado + pseudoconteos de Dirichlet.
+        conteos = np.bincount(indices_t, minlength=num_estados).astype(np.float64)
+        acumulado_t1 = np.zeros((num_estados, num_nodos), dtype=np.float64)
+        np.add.at(acumulado_t1, indices_t, estados_t1)
+
+        # P(X_{t+1}=1 | estado) = (observaciones_1 + alpha) / (total + 2*alpha)
+        # El denominador 2*alpha corresponde a una Dirichlet(alpha, alpha) sobre {0,1}.
+        tpm = (acumulado_t1 + alpha) / (conteos[:, None] + 2.0 * alpha)
+        return tpm.astype(np.float32)
+
 
 # Alias retrocompatible.
 Manager = Gestor
