@@ -21,5 +21,21 @@ from src.estrategias.phi import Phi
 from src.estrategias.q_nodos import QNodos
 from src.estrategias.geometrica import Geometric
 from src.estrategias.circuito import Circuito
+from src.estrategias.informacion_bottleneck import InformacionBottleneck
+from src.estrategias.louvain import Louvain
+from src.estrategias.genetico import AlgoritmoGenetico
+from src.estrategias.particion_ilp import ParticionILP
+from src.estrategias.belief_propagation import BeliefPropagation
 
-__all__ = ["FuerzaBruta", "Phi", "QNodos", "Geometric", "Circuito"]
+__all__ = [
+    "FuerzaBruta",
+    "Phi",
+    "QNodos",
+    "Geometric",
+    "Circuito",
+    "InformacionBottleneck",
+    "Louvain",
+    "AlgoritmoGenetico",
+    "ParticionILP",
+    "BeliefPropagation",
+]

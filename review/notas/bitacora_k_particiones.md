@@ -588,7 +588,7 @@ en pocos atractores.
 
 ---
 
-## Resumen de todo el trabajo
+## Resumen de todo el trabajo (Partes 1–9)
 
 | Módulo / Archivo | Qué aporta |
 |---|---|
@@ -600,3 +600,306 @@ en pocos atractores.
 | `src/herramientas/benchmark.py` | Comparación automática de estrategias con tabla de resultados |
 | `src/visualizacion/particion.py` | Gráficas de bipartición, k-partición y comparación de pérdidas |
 | `src/controladores/gestor.py` | Estimación bayesiana de TPM con prior de Dirichlet |
+
+---
+
+## Parte 10 — Arquitectura hexagonal (Clean Architecture)
+
+### El problema que se detectó
+
+A medida que el proyecto creció, el código fue acumulando acoplamiento horizontal:
+las estrategias importaban directamente el singleton `aplicacion`, `main.py`
+instanciaba estrategias concretas por nombre, y el logging y el profiling
+estaban mezclados dentro de cada clase. Cualquier cambio a la configuración
+global podía afectar inadvertidamente a múltiples módulos.
+
+El síntoma más claro: para testear una estrategia con una configuración distinta
+a la del singleton había que mutar el estado global y luego restaurarlo, lo
+cual es frágil y no funciona en tests paralelos.
+
+### La solución: separar en cuatro capas
+
+Se reorganizó el proyecto siguiendo los principios de **arquitectura hexagonal**
+(Ports & Adapters, Alistair Cockburn 2005) y **Clean Architecture** (Robert Martin):
+
+```
+Dominio ← Aplicación ← Infraestructura ← Presentación
+```
+
+La regla de dependencia dice que el código solo puede apuntar hacia adentro:
+infraestructura puede usar dominio, pero dominio nunca conoce infraestructura.
+
+**Capa de Dominio** (`src/dominio/`)  
+Contiene las entidades puras del problema: `NCube`, `Sistema`, `Solucion` y las
+enumeraciones. No importa nada de fuera. Cualquier cambio de framework o
+librería externa no la toca.
+
+**Capa de Aplicación** (`src/aplicacion/`)  
+Define los contratos que necesita el dominio del mundo exterior mediante
+*puertos* (Protocols de Python):
+
+- `IEstrategia`: cualquier objeto con `aplicar_estrategia(...)` satisface el contrato.
+- `IRepositorioTPM`: cualquier fuente que devuelva una TPM (CSV, base de datos, red).
+- `IRegistro`: cualquier sistema de logging (SafeLogger, stdout, null logger).
+
+También contiene los *casos de uso*, que son la orquestación de alto nivel:
+- `BuscarParticionOptima`: recibe una estrategia y un logger inyectados, corre la búsqueda.
+- `EstimarTPM`: recibe un repositorio inyectado, carga o estima la TPM.
+
+Y el `AppConfig`: un dataclass `frozen=True` que reemplaza al singleton mutable.
+Para cambiar la configuración se crea una nueva instancia; no se muta estado global.
+
+**Capa de Infraestructura** (`src/infraestructura/`)  
+Re-exporta los adaptadores concretos organizados por tipo:
+estrategias, repositorios CSV, logging/profiling, visualización y herramientas.
+Esta capa implementa los puertos definidos en Aplicación.
+
+**Capa de Presentación** (`src/presentacion/`)  
+El `orquestador.py` traduce argumentos del mundo exterior en llamadas a
+casos de uso. No contiene lógica de negocio.
+
+**Composition root** (`src/contenedor.py`)  
+Es el único punto del programa que conoce tanto los puertos como sus
+implementaciones concretas. Aquí se hace el ensamblado:
+
+```python
+# Antes: acoplamiento directo con singleton y estrategia concreta
+solver = FuerzaBruta(tpm)                    # instanciación directa
+aplicacion.tiempo_emd = "jensen-shannon"     # mutación global
+
+# Después: inyección de dependencias desde el contenedor
+config = AppConfig(tiempo_emd=TimeEMD.JENSEN_SHANNON.value)
+contenedor = Contenedor(config)
+caso = contenedor.caso_uso_buscar_particion("fuerza_bruta", tpm)
+resultado = caso.ejecutar(EntradaBusqueda("1000", "1111", "1111", "1111"))
+```
+
+### Cambios en el código existente
+
+Para que el código antiguo siguiera funcionando sin modificaciones se aplicó
+retrocompatibilidad en dos puntos críticos:
+
+1. **`SIA.__init__`** acepta `config: AppConfig | None = None`. Si es `None`,
+   las subclases recurren al singleton como antes. Si se pasa un `AppConfig`,
+   lo usan en su lugar.
+
+2. **`seleccionar_emd(config=None)`** lee `config.tiempo_emd` si se pasa config,
+   o `aplicacion.tiempo_emd` si no. Todas las estrategias que antes llamaban
+   `seleccionar_emd()` sin argumentos siguen funcionando igual.
+
+Los 57 tests existentes pasan sin ningún cambio.
+
+---
+
+## Parte 11 — Cinco estrategias avanzadas de k-partición
+
+Con la arquitectura hexagonal en su lugar, agregar estrategias nuevas se redujo
+a implementar una clase que herede de `SIA` y satisfaga `IEstrategia` — sin
+tocar el resto del sistema.
+
+Se implementaron cinco estrategias usando técnicas que el proyecto no había explorado.
+
+### Fundamento compartido: matriz de afinidad W
+
+Las tres estrategias basadas en grafos (Louvain, ILP y Belief Propagation)
+necesitan construir el grafo de acoplamientos del sistema. En lugar de duplicar
+ese código, se extrajo a `src/funciones/grafo_info.py`:
+
+```
+W[i][j] = sensibilidad promedio del nodo i a cambios en el nodo j
+        = media de |P(Xi=1 | Xj=0, resto) − P(Xi=1 | Xj=1, resto)|
+```
+
+Es la misma métrica que Circuito usaba internamente; ahora es reutilizable.
+
+---
+
+### 11.1 — Information Bottleneck
+
+**Clase:** `InformacionBottleneck` en `src/estrategias/informacion_bottleneck.py`
+
+**Matemáticas:** Tishby, Pereira y Bialek (1999). La idea central es comprimir
+la descripción del sistema mientras se preserva la información predictiva.
+
+Cada nodo tiene un *perfil causal*: la distribución de probabilidad de
+transición aplanada desde su n-cubo. El algoritmo agrupa los nodos cuyos
+perfiles son similares en el sentido de la divergencia KL.
+
+Algoritmo de minimización alternada:
+
+```
+Inicializar p(t|i) ~ Dirichlet(1)   (asignación blanda aleatoria)
+Repetir hasta convergencia:
+  (a) Centroide del cluster t: μ_t = Σ_i p(t|i)·p(i) / p(t)
+  (b) Actualizar p(t|i) ∝ p(t) · exp(−β · KL(f_i ‖ μ_t))
+Asignación hard: z_i = argmax_t p(t|i)
+```
+
+El hiperparámetro β controla la "dureza" del agrupamiento. Un β alto concentra
+la asignación (grupos muy separados); un β bajo la difumina (más incertidumbre).
+Se ejecutan 8 reinicios aleatorios y se reporta el mejor.
+
+**Por qué es relevante para IIT:** La función objetivo del IB — preservar
+información predictiva mientras se comprime — es análoga a la de la MIP:
+encontrar la partición que menos información pierde. La diferencia es que
+IB opera en el espacio de nodos mientras MIP opera en el espacio de particiones.
+
+---
+
+### 11.2 — Louvain
+
+**Clase:** `Louvain` en `src/estrategias/louvain.py`
+
+**Matemáticas:** Blondel, Guillaume, Lambiotte y Lefebvre (2008). Maximización
+de modularidad Q en grafos ponderados.
+
+La modularidad mide si hay más aristas dentro de las comunidades de las que
+habría en un grafo aleatorio con los mismos grados:
+
+```
+Q = Σ_{i,j} [A_ij − k_i·k_j/(2m)] · δ(c_i, c_j) / (2m)
+```
+
+El cambio en Q al mover el nodo i a la comunidad C es:
+
+```
+ΔQ = k_{i→C}/m − Σtot·k_i / (2m²)
+```
+
+donde `k_{i→C}` son los pesos de aristas de i hacia C y `Σtot` es la suma
+de grados en C.
+
+El algoritmo alterna dos fases hasta convergencia:
+- **Fase 1** (optimización): cada nodo se mueve a la comunidad vecina que maximiza ΔQ.
+- **Fase 2** (agregación): las comunidades se contraen en meta-nodos.
+
+Si el número de comunidades resultante supera k, se fusionan las más conectadas
+entre sí. Si es menor que k, la comunidad más grande se divide con el vector
+de Fiedler de su sub-Laplaciano.
+
+---
+
+### 11.3 — Algoritmo Genético
+
+**Clase:** `AlgoritmoGenetico` en `src/estrategias/genetico.py`
+
+**Matemáticas:** metaheurística evolutiva clásica (Holland, 1975).
+
+La representación es directa: un cromosoma es un vector `[g_0, g_1, …, g_{n-1}]`
+donde `g_i ∈ {0, …, k-1}` es el grupo del nodo i.
+
+Operadores:
+
+| Operador | Descripción |
+|---|---|
+| Selección | Torneo de tamaño 3: de 3 individuos aleatorios, gana el de menor φ |
+| Cruce | Uniforme: cada gen se hereda del padre 1 o padre 2 con P=0.5 |
+| Mutación | Punto: cada gen cambia de grupo con probabilidad 1/n |
+| Élitismo | Los 2 mejores individuos pasan intactos a la siguiente generación |
+
+Las asignaciones se canonizan antes de evaluarlas para evitar contar como
+distintas las permutaciones semánticamente iguales (grupo 0 vs grupo 1 da la misma partición).
+
+Convergencia típica: 40 individuos × 80 generaciones = 3200 evaluaciones.
+Para n=4 con evaluaciones en ~1ms, eso toma menos de 5 segundos.
+
+---
+
+### 11.4 — ILP (Relajación LP del k-cut)
+
+**Clase:** `ParticionILP` en `src/estrategias/particion_ilp.py`
+
+**Matemáticas:** Calinescu, Karloff y Rabani (2000). El k-cut mínimo en grafos
+ponderados es NP-difícil para k ≥ 3, pero su relajación LP tiene ratio de
+aproximación `2(1 − 1/k)`, el mejor conocido.
+
+Formulación del programa lineal:
+
+```
+Variables: x[i,g] ∈ [0,1]  — fracción del nodo i en el grupo g
+           y[i,j] ∈ [0,1]  — indicador de que la arista (i,j) está cortada
+
+Minimizar: Σ_{i<j} w_ij · y[i,j]
+
+Sujeto a:  Σ_g x[i,g] = 1         ∀i   (cada nodo en un grupo)
+           Σ_i x[i,g] ≥ 1/k       ∀g   (cada grupo con masa)
+           y[i,j] ≥ x[i,g]−x[j,g] ∀g   (corte ≥ diferencia de asignación)
+           y[i,j] ≥ x[j,g]−x[i,g] ∀g
+```
+
+Se resuelve con `scipy.optimize.linprog` usando el solver HiGHS. La solución
+fraccionaria se redondea con argmax y se refina con búsqueda local.
+
+El grafo que se parte es el de acoplamientos W (de `grafo_info.py`), no el
+espacio de particiones directamente. Eso hace que la solución LP sea un proxy
+de la MIP real, con calidad comparable a Louvain en sistemas con estructura clara.
+
+---
+
+### 11.5 — Belief Propagation
+
+**Clase:** `BeliefPropagation` en `src/estrategias/belief_propagation.py`
+
+**Matemáticas:** Pearl (1988), propagación de mensajes en modelos gráficos
+probabilísticos. Para grafos con ciclos se usa la variante *loopy* (LBP)
+con amortiguación para estabilidad.
+
+El modelo es un **Markov Random Field** con:
+
+- **Variables**: `z_i ∈ {0, …, k-1}` — grupo del nodo i.
+- **Potenciales unarios** `ψ_i(g)`: inicializados por rango de grado ponderado.
+  Los nodos con mayor acoplamiento total tienen preferencia de grupo asignada
+  determinísticamente para guiar la convergencia.
+- **Potenciales de par** (modelo de Potts):
+  ```
+  ψ_ij(g, g) = exp(+α · w_ij)      — premio si mismo grupo y alta afinidad
+  ψ_ij(g, h) = exp(−α · w_ij/k)    — penalización si diferente grupo con alta afinidad
+  ```
+
+Ecuaciones de actualización de mensajes:
+
+```
+μ_{i→j}(h) = Σ_g ψ_i(g) · ψ_ij(g,h) · Π_{l∈N(i)\j} μ_{l→i}(g)
+```
+
+Con amortiguación para evitar oscilaciones:
+```
+μ_nuevo = (1-δ)·μ_viejo + δ·μ_calculado     (δ = 0.5 por defecto)
+```
+
+Las creencias marginales `b_i(g) ∝ ψ_i(g) · Π_{j∈N(i)} μ_{j→i}(g)` dan la
+distribución de probabilidad del grupo de cada nodo. La asignación hard
+toma el argmax de cada creencia.
+
+LBP es exacta en árboles (donde converge garantizadamente) y aproximada en
+grafos con ciclos, donde la convergencia no está garantizada pero la
+amortiguación la estabiliza en la práctica.
+
+---
+
+## Resumen actualizado de todo el trabajo
+
+| Módulo / Archivo | Qué aporta |
+|---|---|
+| `src/funciones/k_particion_buscador.py` | `BuscadorKParticion` (Template Method) + `BuscadorKRecocido` (SA) |
+| `src/funciones/iit.py` | Jensen-Shannon, KL simétrica, Wasserstein-Sinkhorn, Fisher-Rao; `seleccionar_emd(config)` |
+| `src/funciones/grafo_info.py` | `construir_afinidad()` — matriz W compartida entre Louvain, ILP y BP |
+| `src/funciones/entropia.py` | Rényi, Tsallis, perfil de entropías, divergencia de Rényi |
+| `src/funciones/informacion_superior.py` | O-information, correlación total, matriz de dependencia |
+| `src/herramientas/espectral.py` | Eigenvalores, π estacionaria, brecha espectral, tiempo de mezcla |
+| `src/herramientas/benchmark.py` | Comparación automática de estrategias con tabla de resultados |
+| `src/visualizacion/particion.py` | Gráficas de bipartición, k-partición y comparación de pérdidas |
+| `src/controladores/gestor.py` | Estimación bayesiana de TPM con prior de Dirichlet |
+| `src/modelos/base/sia.py` | `__init__(tpm, config=None)` — DI retrocompatible |
+| `src/estrategias/informacion_bottleneck.py` | InformacionBottleneck — minimización alternada IB |
+| `src/estrategias/louvain.py` | Louvain — modularidad Q en grafo de acoplamientos |
+| `src/estrategias/genetico.py` | AlgoritmoGenetico — metaheurística evolutiva |
+| `src/estrategias/particion_ilp.py` | ParticionILP — relajación LP con HiGHS, ratio 2(1-1/k) |
+| `src/estrategias/belief_propagation.py` | BeliefPropagation — LBP con modelo de Potts, amortiguación |
+| `src/aplicacion/configuracion.py` | `AppConfig` — reemplaza singleton, frozen dataclass |
+| `src/aplicacion/puertos/` | `IEstrategia`, `IRepositorioTPM`, `IRegistro` — contratos (Protocols) |
+| `src/aplicacion/casos_de_uso/` | `BuscarParticionOptima`, `EstimarTPM` — orquestación sin acoplamiento |
+| `src/contenedor.py` | Composition root — único punto de ensamble de dependencias |
+| `src/dominio/` | Re-exports que declaran la frontera del dominio puro |
+| `src/infraestructura/` | Re-exports que clasifican los adaptadores concretos |
+| `src/presentacion/orquestador.py` | `ejecutar()` con DI completa |

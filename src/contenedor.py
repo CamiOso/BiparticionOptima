@@ -86,9 +86,30 @@ class Contenedor:
             from src.infraestructura.estrategias import Circuito
             return Circuito(tpm, config=self._config)
 
+        if nombre_lower in {"ib", "information_bottleneck", "informacion_bottleneck"}:
+            from src.infraestructura.estrategias import InformacionBottleneck
+            return InformacionBottleneck(tpm, config=self._config)
+
+        if nombre_lower == "louvain":
+            from src.infraestructura.estrategias import Louvain
+            return Louvain(tpm, config=self._config)
+
+        if nombre_lower in {"genetico", "ga", "algoritmo_genetico"}:
+            from src.infraestructura.estrategias import AlgoritmoGenetico
+            return AlgoritmoGenetico(tpm, config=self._config)
+
+        if nombre_lower in {"ilp", "particion_ilp"}:
+            from src.infraestructura.estrategias import ParticionILP
+            return ParticionILP(tpm, config=self._config)
+
+        if nombre_lower in {"bp", "belief_propagation"}:
+            from src.infraestructura.estrategias import BeliefPropagation
+            return BeliefPropagation(tpm, config=self._config)
+
         raise ValueError(
             f"Estrategia desconocida: '{nombre}'. "
-            "Opciones: fuerza_bruta, phi, qnodos, geometric, circuito."
+            "Opciones: fuerza_bruta, phi, qnodos, geometric, circuito, "
+            "ib, louvain, genetico, ilp, bp."
         )
 
     # ── Fábricas de casos de uso ─────────────────────────────────────────────
