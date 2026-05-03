@@ -41,9 +41,9 @@ class Circuito(SIA):
     En ambos casos se aplica refinamiento local para mejorar el resultado.
     """
 
-    def __init__(self, tpm: np.ndarray) -> None:
-        super().__init__(tpm)
-        self.distancia_metrica = seleccionar_emd()
+    def __init__(self, tpm: np.ndarray, config=None) -> None:
+        super().__init__(tpm, config)
+        self.distancia_metrica = seleccionar_emd(config)
         self._max_iter_refinamiento = 24
         self._cache_particiones: dict[
             tuple[tuple[int, ...], tuple[int, ...]],

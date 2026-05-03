@@ -82,9 +82,9 @@ class _BuscadorKQNodos(BuscadorKParticion):
 class QNodos(SIA):
     """Implementacion submodular de QNodos basada en deltas y omegas."""
 
-    def __init__(self, tpm: np.ndarray) -> None:
-        super().__init__(tpm)
-        self.distancia_metrica = seleccionar_emd()
+    def __init__(self, tpm: np.ndarray, config=None) -> None:
+        super().__init__(tpm, config)
+        self.distancia_metrica = seleccionar_emd(config)
         self.memoria_delta: dict[tuple[tuple[int, ...], tuple[int, ...]], tuple[float, np.ndarray]] = {}
         self.memoria_grupo_candidato: dict[tuple[tuple[int, int], ...], tuple[float, np.ndarray | None]] = {}
         self.clave_submodular: list[list[int]] = [[], []]

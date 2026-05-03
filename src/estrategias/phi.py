@@ -14,9 +14,9 @@ from src.modelos.nucleo.solucion import Solucion
 class Phi(SIA):
     """Estrategia Phi: usa PyPhi si esta disponible y heuristica si no."""
 
-    def __init__(self, tpm: np.ndarray) -> None:
-        super().__init__(tpm)
-        self.distancia_metrica = seleccionar_emd()
+    def __init__(self, tpm: np.ndarray, config=None) -> None:
+        super().__init__(tpm, config)
+        self.distancia_metrica = seleccionar_emd(config)
 
     def aplicar_estrategia(
         self,
@@ -24,6 +24,7 @@ class Phi(SIA):
         condicion: str,
         alcance: str,
         mecanismo: str,
+        **_kwargs,
     ) -> Solucion:
         self.sia_preparar_subsistema(estado_inicial, condicion, alcance, mecanismo)
 

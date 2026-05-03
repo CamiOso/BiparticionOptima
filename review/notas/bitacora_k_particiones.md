@@ -8,17 +8,11 @@
 
 ## ¿Por qué se hizo esto?
 
-El proyecto ya tenía varias estrategias para dividir un sistema en dos grupos
+El proyecto  tenía varias estrategias para dividir un sistema en dos grupos
 y encontrar la división que menos información pierde. Pero eso es una limitación
 fuerte: no todos los sistemas se dividen bien en exactamente dos partes.
 
-Piensen en un equipo de fútbol. Si les digo "divídanlo en dos grupos", me pueden
-dar defensas vs. atacantes. Pero si el equipo en realidad funciona en tres bloques
-(defensa, mediocampo, delantera), forzar dos grupos no va a reflejar bien cómo
-trabajan juntos.
-
-Lo mismo pasa con los sistemas de nodos que estudia este proyecto. Entonces la
-tarea fue:
+la tarea fue:
 
 1. **Extender Geometric y Q-Nodos para que funcionen con k grupos** (no solo 2).
 2. **Diseñar una estrategia nueva** que ataque el problema desde un ángulo

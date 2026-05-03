@@ -233,8 +233,15 @@ def generar_combinaciones(a: str) -> list[tuple[str, str, str]]:
     return list(product([a], b, c))[1:]
 
 
-def seleccionar_emd() -> Callable[[NDArray[np.float32], NDArray[np.float32]], float]:
-    """Selecciona la funcion de distancia segun la configuracion global."""
+def seleccionar_emd(config=None) -> Callable[[NDArray[np.float32], NDArray[np.float32]], float]:
+    """Selecciona la funcion de distancia EMD.
+
+    Parámetros
+    ----------
+    config : AppConfig | None
+        Configuración inyectada. Si es ``None`` usa el singleton global
+        (comportamiento retrocompatible).
+    """
     emd_metricas = {
         TimeEMD.EMD_EFECTO.value: emd_efecto,
         TimeEMD.EMD_CAUSA.value: emd_causal,
@@ -245,9 +252,9 @@ def seleccionar_emd() -> Callable[[NDArray[np.float32], NDArray[np.float32]], fl
         TimeEMD.FISHER_RAO.value: fisher_rao,
     }
 
-    if aplicacion.tiempo_emd not in emd_metricas:
-        raise ValueError(
-            f"Tiempo EMD no soportado en esta etapa: {aplicacion.tiempo_emd}"
-        )
+    tiempo = config.tiempo_emd if config is not None else aplicacion.tiempo_emd
 
-    return emd_metricas[aplicacion.tiempo_emd]
+    if tiempo not in emd_metricas:
+        raise ValueError(f"Tiempo EMD no soportado en esta etapa: {tiempo}")
+
+    return emd_metricas[tiempo]

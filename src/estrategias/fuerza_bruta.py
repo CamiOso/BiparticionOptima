@@ -22,9 +22,9 @@ from src.modelos.nucleo.solucion import Solucion
 class FuerzaBruta(SIA):
     """Implementacion inicial de fuerza bruta (version didactica minima)."""
 
-    def __init__(self, tpm: np.ndarray) -> None:
-        super().__init__(tpm)
-        self.distancia_metrica = seleccionar_emd()
+    def __init__(self, tpm: np.ndarray, config=None) -> None:
+        super().__init__(tpm, config)
+        self.distancia_metrica = seleccionar_emd(config)
         self.logger = SafeLogger("bruteforce_strategy")
         gestor_perfilado.iniciar_sesion("FuerzaBruta")
 
@@ -35,6 +35,7 @@ class FuerzaBruta(SIA):
         condicion: str,
         alcance: str,
         mecanismo: str,
+        **_kwargs,
     ) -> Solucion:
         self.logger.info("Iniciando estrategia FuerzaBruta.")
         self.sia_preparar_subsistema(estado_inicial, condicion, alcance, mecanismo)

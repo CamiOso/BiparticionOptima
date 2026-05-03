@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
+from typing import TYPE_CHECKING
 
 import numpy as np
 from numpy.typing import NDArray
@@ -6,12 +9,20 @@ from numpy.typing import NDArray
 from src.constantes.error import ERROR_INVALID_BITSTRING
 from src.modelos.nucleo.sistema import Sistema
 
+if TYPE_CHECKING:
+    from src.aplicacion.configuracion import AppConfig
+
 
 class SIA(ABC):
-    """Base abstracta para estrategias de Analisis de Irreducibilidad Sistemica."""
+    """Base abstracta para estrategias de Analisis de Irreducibilidad Sistemica.
 
-    def __init__(self, tpm: np.ndarray) -> None:
+    Acepta un ``AppConfig`` opcional para inyección de dependencias. Si no se
+    proporciona, las subclases recurren al singleton global (retrocompatible).
+    """
+
+    def __init__(self, tpm: np.ndarray, config: AppConfig | None = None) -> None:
         self.tpm = tpm
+        self.config = config
         self.sia_subsistema: Sistema | None = None
         self.sia_dists_marginales: NDArray[np.float32] | None = None
 

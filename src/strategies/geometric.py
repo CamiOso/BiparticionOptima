@@ -75,9 +75,9 @@ def _alinear_distribucion(distribucion: np.ndarray, referencia: np.ndarray) -> n
 class Geometric(SIA):
     """Estrategia geometrica sobre hipercubo para aproximar la MIP en O(n*2^n)."""
 
-    def __init__(self, tpm: np.ndarray, mode: GeometricMode | str | None = None) -> None:
-        super().__init__(tpm)
-        self.distancia_metrica = seleccionar_emd()
+    def __init__(self, tpm: np.ndarray, mode: GeometricMode | str | None = None, config=None) -> None:
+        super().__init__(tpm, config)
+        self.distancia_metrica = seleccionar_emd(config)
         self.mode = self._resolver_modo(mode)
         self._beam_top_k = 12
         self._max_candidatos_costo_cero = 32
