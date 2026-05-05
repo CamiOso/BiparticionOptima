@@ -10,7 +10,7 @@ import numpy as np
 from src.constantes.models import GEOMETRIC_LABEL
 from src.funciones.formato import fmt_biparticion, fmt_k_particion_asignacion
 from src.funciones.iit import seleccionar_emd
-from src.funciones.k_particion_buscador import BuscadorKParticion, ResultadoKParticion
+from src.funciones.k_particion_buscador import BuscadorKDP, ResultadoKParticion
 from src.funciones.particiones import biparticiones, k_particiones_asignacion
 from src.modelos.base.aplicacion import aplicacion
 from src.modelos.base.sia import SIA
@@ -27,11 +27,14 @@ class _ResultadoParticion:
     submecanismo: tuple[int, ...]
 
 
-class _BuscadorKGeometric(BuscadorKParticion):
+class _BuscadorKGeometric(BuscadorKDP):
     """Buscador de k-particion para la estrategia geometrica.
 
     Evalua cada asignacion usando k_bipartir sobre el sistema espacial,
     donde los nodos son indices enteros (no pares temporales).
+
+    Hereda de BuscadorKDP: usa costos del hipercubo geometrico precalculados
+    para inicializacion DP y refina con recocido simulado.
     """
 
     def __init__(
@@ -42,8 +45,18 @@ class _BuscadorKGeometric(BuscadorKParticion):
         distancia_metrica,
         cache: dict[tuple[int, ...], tuple[float, np.ndarray]],
         max_restarts: int = 20,
+        costos_subconjuntos: np.ndarray | None = None,
     ) -> None:
-        super().__init__(umbral_exacto=5, max_iter_refinamiento=24, max_restarts=max_restarts)
+        super().__init__(
+            costos_subconjuntos=costos_subconjuntos,
+            umbral_dp=12,
+            temp_inicial=1.0,
+            temp_final=0.001,
+            factor_enfriamiento=0.92,
+            pasos_por_temp=30,
+        )
+        self.umbral_exacto = 5
+        self.max_restarts = max_restarts
         self._nodos = nodos
         self._sistema = sistema
         self._dists = dists
@@ -62,6 +75,7 @@ class _BuscadorKGeometric(BuscadorKParticion):
         perdida = float(self._distancia_metrica(self._dists, dist))
         self._cache[asignacion] = (perdida, dist)
         return perdida, dist
+
 
 
 def _alinear_distribucion(distribucion: np.ndarray, referencia: np.ndarray) -> np.ndarray:
@@ -140,6 +154,14 @@ class Geometric(SIA):
 
         if k > 2:
             nodos = sorted(set(alcance_total) | set(mecanismo_total))
+            # Reusar costos del hipercubo geometrico para inicializacion DP sin coste extra.
+            _, _, costos_locales, _ = self._precalcular_busqueda_geometrica(
+                alcance_total, mecanismo_total
+            )
+            # Warm-start desde biparticion optima: convierte mascara k=2 en semilla k-grupos.
+            semilla_k = self._semilla_desde_biparticion(
+                nodos, alcance_total, mecanismo_total, costos_locales
+            )
             buscador = _BuscadorKGeometric(
                 nodos=nodos,
                 sistema=self.sia_subsistema,
@@ -147,8 +169,14 @@ class Geometric(SIA):
                 distancia_metrica=self.distancia_metrica,
                 cache=self._cache_k_particiones,
                 max_restarts=self._random_restarts,
+                costos_subconjuntos=costos_locales,
             )
-            resultado_k = buscador.buscar(k, semilla=aplicacion.semilla_numpy)
+            if semilla_k is not None:
+                resultado_k = buscador.buscar_con_semilla(
+                    k, semilla_k, semilla=aplicacion.semilla_numpy
+                )
+            else:
+                resultado_k = buscador.buscar(k, semilla=aplicacion.semilla_numpy)
             return Solucion(
                 estrategia=GEOMETRIC_LABEL,
                 perdida=resultado_k.perdida,
@@ -913,6 +941,41 @@ class Geometric(SIA):
         resultado = (perdida, distribucion)
         self._cache_particiones[clave] = resultado
         return resultado
+
+    def _semilla_desde_biparticion(
+        self,
+        nodos: list[int],
+        alcance_total: tuple[int, ...],
+        mecanismo_total: tuple[int, ...],
+        costos_locales: np.ndarray,
+    ) -> tuple[int, ...] | None:
+        """Convierte la mejor biparticion del hipercubo en una asignacion k-grupos inicial.
+
+        Toma la mascara con menor costo local como grupo 0 y el complemento como grupo 1.
+        Sirve de warm-start para la busqueda k>2.
+        """
+        total = len(costos_locales)
+        full_mask = total - 1
+        internas_finitas = [
+            m for m in range(1, full_mask) if np.isfinite(costos_locales[m])
+        ]
+        if not internas_finitas:
+            return None
+        mejor_mascara = min(internas_finitas, key=lambda m: float(costos_locales[m]))
+        n = len(nodos)
+        asig = tuple(0 if (mejor_mascara >> i) & 1 else 1 for i in range(n))
+        return self.canonicalizar(asig) if hasattr(self, "canonicalizar") else asig
+
+    def canonicalizar(self, asignacion: tuple[int, ...]) -> tuple[int, ...]:
+        mapa: dict[int, int] = {}
+        siguiente = 0
+        canon = []
+        for grupo in asignacion:
+            if grupo not in mapa:
+                mapa[grupo] = siguiente
+                siguiente += 1
+            canon.append(mapa[grupo])
+        return tuple(canon)
 
 
 # Alias en espanol para conservar consistencia del proyecto.

@@ -4,7 +4,7 @@ import numpy as np
 
 from src.funciones.formato import fmt_biparticion_q, fmt_k_particion_q
 from src.funciones.iit import seleccionar_emd
-from src.funciones.k_particion_buscador import BuscadorKParticion, ResultadoKParticion
+from src.funciones.k_particion_buscador import BuscadorKRecocido, ResultadoKParticion
 from src.modelos.base.aplicacion import aplicacion
 from src.modelos.base.sia import SIA
 from src.modelos.nucleo.sistema import Sistema
@@ -32,11 +32,13 @@ def _grupos_desde_asignacion(
     return grupos
 
 
-class _BuscadorKQNodos(BuscadorKParticion):
+class _BuscadorKQNodos(BuscadorKRecocido):
     """Buscador de k-particion para la estrategia QNodos.
 
     Evalua cada asignacion usando k_bipartir_temporal, que trabaja con pares
     (tiempo, indice) para separar el mecanismo (t=0) del alcance (t=1).
+
+    Hereda de BuscadorKRecocido para escapar minimos locales con SA.
     """
 
     def __init__(
@@ -47,7 +49,13 @@ class _BuscadorKQNodos(BuscadorKParticion):
         distancia_metrica,
         cache: dict[tuple[int, ...], tuple[float, np.ndarray]],
     ) -> None:
-        super().__init__(umbral_exacto=8, max_iter_refinamiento=24, max_restarts=16)
+        super().__init__(
+            temp_inicial=1.0,
+            temp_final=0.001,
+            factor_enfriamiento=0.92,
+            pasos_por_temp=30,
+        )
+        self.umbral_exacto = 8
         self._vertices = vertices
         self._sistema = sistema
         self._dists = dists
@@ -118,6 +126,10 @@ class QNodos(SIA):
 
         if k > 2:
             self._cache_k_particiones.clear()
+            # Warm-start: particion recursiva Q con memoizacion DP.
+            memo_q: dict[tuple, tuple[int, ...]] = {}
+            semilla_asig = self._particionar_recursivo_q(vertices, k, memo_q)
+
             buscador = _BuscadorKQNodos(
                 vertices=vertices,
                 sistema=self.sia_subsistema,
@@ -125,7 +137,12 @@ class QNodos(SIA):
                 distancia_metrica=self.distancia_metrica,
                 cache=self._cache_k_particiones,
             )
-            resultado_k = buscador.buscar(k, semilla=aplicacion.semilla_numpy + len(vertices))
+            if semilla_asig is not None:
+                resultado_k = buscador.buscar_con_semilla(
+                    k, semilla_asig, semilla=aplicacion.semilla_numpy + len(vertices)
+                )
+            else:
+                resultado_k = buscador.buscar(k, semilla=aplicacion.semilla_numpy + len(vertices))
             grupos = _grupos_desde_asignacion(resultado_k.asignacion, vertices)
             return Solucion(
                 estrategia="QNodos",
@@ -281,6 +298,87 @@ class QNodos(SIA):
         ):
             return [conjunto]
         return [(int(t), int(i)) for t, i in conjunto]
+
+    def _particionar_recursivo_q(
+        self,
+        vertices: list[tuple[int, int]],
+        k: int,
+        memo: dict[tuple, tuple[int, ...] | None],
+    ) -> tuple[int, ...] | None:
+        """Particion jerarquica con memoizacion DP usando el algoritmo Q.
+
+        Aplica algoritmo_q recursivamente (divide y venceras) para obtener
+        una asignacion inicial de k grupos sin evaluaciones redundantes.
+        Memoiza por (subconjunto_ordenado, k) para evitar recomputo.
+        Retorna una asignacion sobre `vertices` en orden de entrada, o None.
+        """
+        clave = (tuple(sorted(vertices, key=lambda v: (v[0], v[1]))), k)
+        if clave in memo:
+            return memo[clave]
+
+        n = len(vertices)
+        if k >= n or n <= 1:
+            memo[clave] = None
+            return None
+
+        # Solo guardar/restaurar vertices y memoria_grupo_candidato.
+        # memoria_delta se acumula entre llamadas (es independiente del subconjunto).
+        vertices_prev = self.vertices
+        mem_cand_prev = self.memoria_grupo_candidato.copy()
+
+        self.vertices = set(vertices)
+        self.memoria_grupo_candidato.clear()
+        try:
+            clave_mip = self.algoritmo_q(list(vertices))
+        except Exception:
+            self.vertices = vertices_prev
+            self.memoria_grupo_candidato = mem_cand_prev
+            memo[clave] = None
+            return None
+
+        grupo_a = list(clave_mip)
+        grupo_b = [v for v in vertices if v not in set(clave_mip)]
+
+        self.vertices = vertices_prev
+        self.memoria_grupo_candidato = mem_cand_prev
+
+        if k == 2:
+            set_a = set(grupo_a)
+            asig = tuple(0 if v in set_a else 1 for v in vertices)
+            memo[clave] = asig
+            return asig
+
+        # Para k>2: partir el grupo mayor en k-1 subgrupos.
+        mayor, menor = (grupo_a, grupo_b) if len(grupo_a) >= len(grupo_b) else (grupo_b, grupo_a)
+        sub_asig = self._particionar_recursivo_q(mayor, k - 1, memo)
+
+        if sub_asig is None:
+            memo[clave] = None
+            return None
+
+        # Indice de cada vertice dentro de `mayor` para mapear sub_asig.
+        pos_en_mayor = {v: i for i, v in enumerate(mayor)}
+        menor_set = set(menor)
+
+        asig_global = [0] * n
+        for i, v in enumerate(vertices):
+            if v in menor_set:
+                asig_global[i] = k - 1
+            else:
+                asig_global[i] = sub_asig[pos_en_mayor[v]]
+
+        # Canonicalizar grupos (0, 1, ...).
+        mapa: dict[int, int] = {}
+        sig = 0
+        canon = []
+        for g in asig_global:
+            if g not in mapa:
+                mapa[g] = sig
+                sig += 1
+            canon.append(mapa[g])
+        asig_canon = tuple(canon)
+        memo[clave] = asig_canon
+        return asig_canon
 
 
 # Alias retrocompatible.

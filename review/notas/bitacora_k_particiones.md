@@ -6,6 +6,33 @@
 
 ---
 
+## Bitácora cronológica de investigación e implementación
+
+Aquí dejamos el mapa de trabajo que seguimos en esta etapa del proyecto.
+Tomamos como referencia las fechas registradas en los commits, porque nos
+permiten ver con claridad qué se investigó, sobre qué temática se trabajó y
+cómo esa investigación terminó convirtiéndose en código dentro del sistema.
+
+| Fecha | Investigación realizada | Temática | Cómo se implementó en el proyecto |
+|---|---|---|---|
+| 2026-03-12 | Se levantó la base del proyecto y se definió la estructura inicial para trabajar con el sistema IIT. | Configuración inicial, modelo base y arranque del proyecto. | Se creó `README`, `pyproject`, `requirements`, `main` inicial, constantes base, `Application`, `Manager`, `NCube`, `System` y una primera versión de `BruteForce`. |
+| 2026-03-13 | Se revisó la forma de calcular la pérdida de información y se empezaron a ordenar las salidas del sistema. | EMD, particionado y control del flujo. | Se agregó la métrica EMD, se encapsularon resultados en `Solution`, se centralizó el formato de salida y se integraron middleware de logging y perfilado. |
+| 2026-03-13 | Se profundizó en estrategias alternativas a la búsqueda por fuerza bruta. | Phi, Q-Nodes y optimización de estrategias. | Se implementaron las estrategias `Phi` y `Q-Nodes`, se mejoró la heurística, se agregó memoización y se realizaron pruebas iniciales. |
+| 2026-03-13 | Se reorganizó el proyecto para que el código quedara más legible y mantenible. | Refactorización de nombres y estructura. | Se tradujeron carpetas, módulos y clases principales al español y se ajustaron identificadores internos para alinearlos con la nueva convención. |
+| 2026-03-14 | Se estudió cómo hacer más eficiente la búsqueda en la estrategia Geometric. | Estrategia Geometric y benchmark reproducible. | Se añadió Geometric con validación, refinamiento local, restarts adaptativos y comparación entre modos estricto y refinado. |
+| 2026-03-15 | Se consolidó la experiencia de uso del sistema y se cerró la etapa de pruebas de la estrategia Geometric. | CLI, documentación y CI. | Se incorporó una interfaz de línea de comandos para elegir estrategias, se documentaron resultados finales y se añadió workflow de integración continua. |
+| 2026-03-17 | Se trabajó en la salida estandarizada del sistema y en los datos de entrada para pruebas más realistas. | Estado inicial, JSON y muestras TPM. | Se agregó salida JSON por CLI, se pinnearon dependencias y se incluyeron muestras TPM `N5A` a `N8A`. |
+| 2026-04-04 | Se evaluó cómo escalar mejor Geometric y cómo visualizar sus resultados. | Optimización y visualización. | Se mejoró la estrategia para sistemas grandes, se soportaron TPM desde muestras y se añadieron visualizaciones y benchmarks de optimización. |
+| 2026-04-21 | Se revisó una forma distinta de abordar la partición del sistema, buscando salir de la búsqueda directa por biparticiones. | Estrategia Circuito y análisis espectral. | Se implementó `src/estrategias/circuito.py`, donde el sistema se modela como un grafo con Laplaciano espectral, eigenvectores y refinamiento local para obtener la partición. |
+| 2026-04-30 | Se estudió cómo ampliar la búsqueda de particiones y cómo comparar mejor la calidad de las soluciones. | Métricas avanzadas, recocido simulado y benchmark. | Se agregaron nuevas métricas como JS, KL, Wasserstein y Fisher-Rao, además de la estrategia de recocido simulado, visualizaciones y scripts de evaluación en `review/benchmarks/`. |
+| 2026-05-03 | Se revisó la necesidad de escalar el proyecto y organizar mejor la lógica de partición para nuevas estrategias. | Arquitectura del software y k-particiones avanzadas. | Se reorganizó el proyecto con arquitectura hexagonal y se incorporaron cinco estrategias avanzadas de k-partición, manteniendo una estructura más limpia y reutilizable. |
+
+En términos generales, esta bitácora muestra cómo el proyecto fue creciendo
+desde una primera revisión de los métodos de partición hasta la integración
+de nuevas estrategias, métricas y estructuras de software. La intención fue
+que cada investigación no quedara solo en teoría, sino que terminara reflejada
+en una implementación concreta y verificable dentro del repositorio.
+
 ## ¿Por qué se hizo esto?
 
 El proyecto  tenía varias estrategias para dividir un sistema en dos grupos
@@ -592,7 +619,7 @@ en pocos atractores.
 
 | Módulo / Archivo | Qué aporta |
 |---|---|
-| `src/funciones/k_particion_buscador.py` | `BuscadorKParticion` (Template Method) + `BuscadorKRecocido` (SA) |
+| `src/funciones/k_particion_buscador.py` | `BuscadorKParticion` + `BuscadorKRecocido` (SA) + `BuscadorKDP` (DP subconjuntos + SA) + `buscar_con_semilla` |
 | `src/funciones/iit.py` | Jensen-Shannon, KL simétrica, Wasserstein-Sinkhorn, Fisher-Rao |
 | `src/funciones/entropia.py` | Rényi, Tsallis, perfil de entropías, divergencia de Rényi |
 | `src/funciones/informacion_superior.py` | O-information, correlación total, matriz de dependencia |
@@ -881,7 +908,7 @@ amortiguación la estabiliza en la práctica.
 
 | Módulo / Archivo | Qué aporta |
 |---|---|
-| `src/funciones/k_particion_buscador.py` | `BuscadorKParticion` (Template Method) + `BuscadorKRecocido` (SA) |
+| `src/funciones/k_particion_buscador.py` | `BuscadorKParticion` + `BuscadorKRecocido` (SA) + `BuscadorKDP` (DP subconjuntos + SA) + `buscar_con_semilla` |
 | `src/funciones/iit.py` | Jensen-Shannon, KL simétrica, Wasserstein-Sinkhorn, Fisher-Rao; `seleccionar_emd(config)` |
 | `src/funciones/grafo_info.py` | `construir_afinidad()` — matriz W compartida entre Louvain, ILP y BP |
 | `src/funciones/entropia.py` | Rényi, Tsallis, perfil de entropías, divergencia de Rényi |
@@ -903,3 +930,126 @@ amortiguación la estabiliza en la práctica.
 | `src/dominio/` | Re-exports que declaran la frontera del dominio puro |
 | `src/infraestructura/` | Re-exports que clasifican los adaptadores concretos |
 | `src/presentacion/orquestador.py` | `ejecutar()` con DI completa |
+
+---
+
+## Parte 12 — Optimización de k-particiones: DP de subconjuntos + warm-start + SA
+
+**Fecha:** Mayo 2026
+
+### Diagnóstico de la situación anterior
+
+Después de los benchmarks de la Parte 1 quedó claro que para k > 2:
+
+- **Geometric** era rápida pero quedaba atrapada en mínimos locales: su búsqueda
+  local codiciosa no podía escapar una vez que ningún movimiento individual mejoraba
+  la solución.
+- **Q-Nodos** encontraba mejores particiones para k = 2 gracias a la submodularidad,
+  pero para k > 2 el `algoritmo_q` (que es la esencia de la estrategia) se descartaba
+  completamente y se caía en el mismo `BuscadorKParticion` genérico que Geometric.
+- `BuscadorKRecocido` existía en el código pero **ninguna estrategia lo usaba** para
+  k > 2. Estaba implementado y sin conectar.
+
+Tres brechas concretas:
+
+| Brecha | Descripción |
+|---|---|
+| SA desconectado | `BuscadorKRecocido` sin uso en ninguna estrategia k > 2 |
+| Geometric pierde geometría | Para k > 2 ignoraba todo el cálculo del hipercubo (costos_locales) |
+| Q-Nodos pierde submodularidad | Para k > 2 no usaba `algoritmo_q` en ningún momento |
+
+---
+
+### Solución 1 — `BuscadorKDP`: programación dinámica de subconjuntos
+
+Se agregó una nueva clase `BuscadorKDP` en `src/funciones/k_particion_buscador.py` que hereda de `BuscadorKRecocido`.
+
+**Idea central:** Para encontrar la k-partición óptima de n elementos se puede usar DP sobre los 2ⁿ subconjuntos posibles. Se define:
+
+```
+costos_sub[mask] = costo de bipartición donde los elementos indicados por `mask`
+                   forman un grupo y el resto forma el otro
+```
+
+Con esos costos precalculados se aplica DP de subconjuntos:
+
+```
+dp[mask][j] = min costo estimado de j-partición de los elementos en mask
+
+Transición: dp[mask][j] = min sobre todo subconjunto T⊆mask:
+               dp[mask ^ T][j-1] + costos_sub[T]
+```
+
+Complejidad:
+- **Precomputo**: O(2ⁿ) evaluaciones de bipartición. Si se pasan costos ya calculados (como los del hipercubo de Geometric), el precomputo es O(1) — cero evaluaciones extras.
+- **Tabla DP**: O(3ⁿ × k) transiciones (solo comparaciones, sin evaluaciones).
+- **Refinamiento**: el resultado de la DP inicializa el SA heredado de `BuscadorKRecocido`.
+
+El DP da la asignación inicial de mínimo costo estimado. El SA la refina para escapar del mínimo local que el DP podría haber encontrado.
+
+```
+BuscadorKParticion (greedy local)
+├── BuscadorKRecocido (SA puro)
+│   └── BuscadorKDP (DP init + SA refinamiento)   ← NUEVO
+```
+
+---
+
+### Solución 2 — Warm-start geométrico para Geometric k > 2
+
+`_BuscadorKGeometric` ahora hereda de `BuscadorKDP` en vez de `BuscadorKParticion`.
+
+Para k > 2, en lugar de empezar con una asignación aleatoria, la estrategia:
+
+1. Llama `_precalcular_busqueda_geometrica` para obtener `costos_locales` del hipercubo.
+2. Pasa ese array directamente a `BuscadorKDP` como `costos_subconjuntos`: **el DP reutiliza la geometría ya calculada sin ningún costo adicional de evaluación**.
+3. Extrae la mejor máscara de `costos_locales` (la que tiene menor costo de bipartición) y la convierte en una asignación de k grupos como warm-start adicional (`_semilla_desde_biparticion`).
+4. Compara la semilla DP + refinamiento local contra una corrida SA independiente; retorna el mejor.
+
+Esto cierra el gap que existía: antes la geometría del hipercubo solo servía para k = 2; ahora también inicializa k > 2.
+
+---
+
+### Solución 3 — Partición recursiva Q con memoización DP para Q-Nodos k > 2
+
+`_BuscadorKQNodos` ahora hereda de `BuscadorKRecocido` en vez de `BuscadorKParticion`.
+
+Se agregó `_particionar_recursivo_q` a la clase `QNodos`. Es una implementación de **divide y vencerás con memoización** sobre el espacio de (subconjunto, k):
+
+```
+memo[(frozenset(vertices), k)] = mejor asignacion de k grupos para esos vertices
+```
+
+Algoritmo:
+1. Para k = 2: aplicar `algoritmo_q` directamente sobre los vértices dados.
+2. Para k > 2: bipartir con `algoritmo_q`, identificar el grupo mayor, partirlo recursivamente en k-1 subgrupos, reconstruir la asignación global.
+3. Memoizar cada subproblema para que subconjuntos repetidos no se recalculen.
+
+Esto preserva la esencia submodular de Q-Nodos en todos los niveles del árbol de recursión. La asignación resultante se usa como warm-start para el SA del `_BuscadorKQNodos`.
+
+Gestión de estado: dentro de cada llamada recursiva se guarda y restaura `self.vertices` y `self.memoria_grupo_candidato`. `memoria_delta` se deja acumular entre llamadas porque sus valores (costos de bipartición por subconjunto mecanismo/alcance) son independientes del subconjunto que se está particionando.
+
+---
+
+### Comparación antes / después
+
+| Aspecto | Antes | Después |
+|---|---|---|
+| `_BuscadorKGeometric` hereda de | `BuscadorKParticion` | `BuscadorKDP` |
+| `_BuscadorKQNodos` hereda de | `BuscadorKParticion` | `BuscadorKRecocido` |
+| Geometric k > 2 usa hipercubo | No | Sí (`costos_locales` → DP) |
+| Q-Nodos k > 2 usa submodularidad | No | Sí (recursión `algoritmo_q`) |
+| Warm-start desde k = 2 | No | Sí (máscara óptima → asignación inicial) |
+| Escape de mínimos locales | Greedy puro | SA en todas las estrategias k > 2 |
+| `buscar_con_semilla` disponible | No | Sí (en `BuscadorKRecocido`, heredado por todos) |
+| Tests pasando | 57/57 | 57/57 |
+
+---
+
+### Archivos modificados
+
+| Archivo | Cambio |
+|---|---|
+| `src/funciones/k_particion_buscador.py` | `BuscadorKDP` + `BuscadorKRecocido.buscar_con_semilla` |
+| `src/strategies/geometric.py` | `_BuscadorKGeometric` → hereda `BuscadorKDP`; warm-start geométrico |
+| `src/estrategias/q_nodos.py` | `_BuscadorKQNodos` → hereda `BuscadorKRecocido`; `_particionar_recursivo_q` |

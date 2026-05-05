@@ -35,17 +35,21 @@ pip install -r requirements.txt
 
 ### Estrategias clásicas
 
-| Estrategia    | Enfoque                                       | Complejidad   | Exacta |
-|---------------|-----------------------------------------------|---------------|--------|
-| FuerzaBruta   | Prueba todas las particiones posibles          | O(2^n)        | Sí     |
-| Phi           | PyPhi si disponible, heurística si no          | —             | Sí/No  |
-| Geometric     | Búsqueda geométrica sobre hipercubo            | O(n·2^n)      | No     |
-| QNodos        | Búsqueda submodular greedy con memoización     | O(n²)         | No     |
-| Circuito      | Eigendescomposición del Laplaciano del grafo   | O(n³)         | No     |
+| Estrategia    | Enfoque                                       | Complejidad k=2 | Complejidad k>2            | Exacta |
+|---------------|-----------------------------------------------|-----------------|----------------------------|--------|
+| FuerzaBruta   | Prueba todas las particiones posibles          | O(2^n)          | —                          | Sí     |
+| Phi           | PyPhi si disponible, heurística si no          | —               | —                          | Sí/No  |
+| Geometric     | Búsqueda geométrica sobre hipercubo            | O(n·2^n)        | DP O(3^n·k) + SA           | No     |
+| QNodos        | Búsqueda submodular greedy con memoización     | O(n²)           | Recursión Q + SA           | No     |
+| Circuito      | Eigendescomposición del Laplaciano del grafo   | O(n³)           | O(n³) + k-means            | No     |
 
-`Geometric` tiene dos modos:
+`Geometric` tiene dos modos para k = 2:
 - `estricto`: solo tabla recursiva, mantiene la cota teórica `O(n·2^n)`.
 - `refinado`: agrega hill-climbing y restarts para máxima precisión.
+
+Para k > 2, **Geometric** usa DP de subconjuntos (`BuscadorKDP`) inicializado con los
+costos del hipercubo ya calculados + recocido simulado. **Q-Nodos** usa partición
+recursiva con memoización DP sobre `algoritmo_q` como warm-start + recocido simulado.
 
 ### Estrategias avanzadas de k-partición
 
@@ -58,6 +62,17 @@ pip install -r requirements.txt
 | BeliefPropagation      | Loopy Belief Propagation con modelo de Potts        | O(iter·|E|·k²)        |
 
 Todas las estrategias soportan **k-particiones** (k ≥ 2 grupos).
+
+### Infraestructura de búsqueda de k-particiones
+
+```
+BuscadorKParticion  (Template Method — greedy local)
+├── BuscadorKRecocido   (Simulated Annealing)
+│   └── BuscadorKDP     (DP de subconjuntos O(3^n·k) + SA)
+```
+
+`BuscadorKDP` acepta costos precalculados (`costos_subconjuntos`) para evitar
+recomputo cuando la estrategia ya los tiene disponibles (caso Geometric).
 
 ---
 
