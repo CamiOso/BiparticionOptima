@@ -161,19 +161,21 @@ class BuscadorKRecocido(BuscadorKParticion):
         temp_final: float = 0.001,
         factor_enfriamiento: float = 0.92,
         pasos_por_temp: int = 30,
+        n_cadenas: int = 3,
     ) -> None:
         super().__init__(umbral_exacto=6, max_iter_refinamiento=0, max_restarts=0)
         self.temp_inicial = temp_inicial
         self.temp_final = temp_final
         self.factor_enfriamiento = factor_enfriamiento
         self.pasos_por_temp = pasos_por_temp
+        self.n_cadenas = n_cadenas
 
     def buscar(self, k: int, semilla: int = 42) -> ResultadoKParticion:
         n = self.total_elementos()
         k_eff = min(k, n)
         if n <= self.umbral_exacto:
             return self._buscar_exacto(k_eff)
-        return self._recocido(k_eff, semilla)
+        return self._multi_recocido(k_eff, semilla)
 
     def _recocido(self, k: int, semilla: int) -> ResultadoKParticion:
         n = self.total_elementos()
@@ -246,8 +248,22 @@ class BuscadorKRecocido(BuscadorKParticion):
         perdida_s, dist_s = self.evaluar_asignacion(semilla_asig)
         inicio = ResultadoKParticion(perdida=perdida_s, distribucion=dist_s, asignacion=semilla_asig)
         refinado = self.refinar_local(inicio, k)
-        resultado_sa = self._recocido(k, semilla)
+        resultado_sa = self._multi_recocido(k, semilla)
         return refinado if refinado.perdida <= resultado_sa.perdida else resultado_sa
+
+    def _multi_recocido(self, k: int, semilla: int) -> ResultadoKParticion:
+        """Corre n_cadenas corridas SA independientes y retorna la mejor.
+
+        Cada cadena arranca desde un punto aleatorio distinto (semillas
+        separadas por 1009 para evitar correlaciones). El cache compartido
+        hace que las cadenas posteriores sean mas rapidas que la primera.
+        """
+        mejor = self._recocido(k, semilla)
+        for i in range(1, self.n_cadenas):
+            candidato = self._recocido(k, semilla + i * 1009)
+            if candidato.perdida < mejor.perdida:
+                mejor = candidato
+        return mejor
 
 
 class BuscadorKDP(BuscadorKRecocido):
@@ -290,7 +306,7 @@ class BuscadorKDP(BuscadorKRecocido):
             return self._buscar_exacto(k_eff)
         if n <= self._umbral_dp:
             return self._buscar_dp_sa(k_eff, semilla)
-        return self._recocido(k_eff, semilla)
+        return self._multi_recocido(k_eff, semilla)
 
     def _obtener_costos_sub(self, n: int) -> np.ndarray:
         total = 1 << n
@@ -376,6 +392,10 @@ class BuscadorKDP(BuscadorKRecocido):
                         )
             temp *= self.factor_enfriamiento
 
+        for i in range(1, self.n_cadenas):
+            candidato = self._recocido(k, semilla + i * 1009)
+            if candidato.perdida < mejor.perdida:
+                mejor = candidato
         return mejor
 
     def _reconstruir_dp(
