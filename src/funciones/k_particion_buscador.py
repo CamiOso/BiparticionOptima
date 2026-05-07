@@ -196,10 +196,21 @@ class BuscadorKRecocido(BuscadorKParticion):
         temp = self.temp_inicial
         while temp > self.temp_final:
             for _ in range(self.pasos_por_temp):
-                idx = int(rng.integers(0, n))
-                nuevo_grupo = int(rng.integers(0, k))
                 nueva = list(asig_actual)
-                nueva[idx] = nuevo_grupo
+                if n >= 2 and rng.random() < 0.5:
+                    # Swap: intercambiar grupos de dos nodos distintos.
+                    # Permite llegar en un paso a vecinos que el movimiento
+                    # individual necesita dos pasos aceptados para alcanzar.
+                    i = int(rng.integers(0, n))
+                    j = int(rng.integers(0, n - 1))
+                    if j >= i:
+                        j += 1
+                    nueva[i], nueva[j] = nueva[j], nueva[i]
+                else:
+                    idx = int(rng.integers(0, n))
+                    nuevo_grupo = int(rng.integers(0, k))
+                    nueva[idx] = nuevo_grupo
+
                 asig_vecina = self.canonicalizar(tuple(nueva))
 
                 if len(set(asig_vecina)) < 2:
@@ -338,10 +349,17 @@ class BuscadorKDP(BuscadorKRecocido):
         temp = self.temp_inicial
         while temp > self.temp_final:
             for _ in range(self.pasos_por_temp):
-                idx = int(rng.integers(0, n))
-                nuevo_grupo = int(rng.integers(0, k))
                 nueva = list(asig_actual)
-                nueva[idx] = nuevo_grupo
+                if n >= 2 and rng.random() < 0.5:
+                    i = int(rng.integers(0, n))
+                    j = int(rng.integers(0, n - 1))
+                    if j >= i:
+                        j += 1
+                    nueva[i], nueva[j] = nueva[j], nueva[i]
+                else:
+                    idx = int(rng.integers(0, n))
+                    nuevo_grupo = int(rng.integers(0, k))
+                    nueva[idx] = nuevo_grupo
                 asig_v = self.canonicalizar(tuple(nueva))
                 if len(set(asig_v)) < 2:
                     continue
