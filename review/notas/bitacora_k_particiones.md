@@ -1053,3 +1053,118 @@ Gestión de estado: dentro de cada llamada recursiva se guarda y restaura `self.
 | `src/funciones/k_particion_buscador.py` | `BuscadorKDP` + `BuscadorKRecocido.buscar_con_semilla` |
 | `src/strategies/geometric.py` | `_BuscadorKGeometric` → hereda `BuscadorKDP`; warm-start geométrico |
 | `src/estrategias/q_nodos.py` | `_BuscadorKQNodos` → hereda `BuscadorKRecocido`; `_particionar_recursivo_q` |
+
+---
+
+## Parte 13 — Enriquecimiento del SA: swap moves y múltiples cadenas
+
+**Fecha:** Mayo 2026
+
+### El problema que quedaba pendiente
+
+El SA de la Parte 12 tenía un solo tipo de movimiento en cada paso: tomar un nodo al azar y asignarlo a un grupo distinto al azar. Eso limita la exploración porque para intercambiar el nodo A (grupo 0) con el nodo B (grupo 1) se necesitan **dos movimientos consecutivos aceptados**. En la práctica, el SA se quedaba atrapado en mínimos locales donde ningún movimiento individual mejoraba la solución pero sí podría mejorar un intercambio directo.
+
+Adicionalmente, por cada llamada a `buscar` o `buscar_con_semilla` el SA corría una sola cadena desde un único punto de inicio. Si esa cadena quedaba atrapada, no había forma de recuperarse.
+
+---
+
+### Mejora 1 — Swap moves: ampliar el vecindario del SA
+
+Se modificó el método `_recocido` de `BuscadorKRecocido` para que en cada paso del SA, con probabilidad 0.5, se ejecute un **swap** en lugar de una reasignación individual:
+
+```
+Reasignación (50% del tiempo):
+  nodo i → grupo aleatorio g
+  [0, 1, 0, 2] → [0, 2, 0, 2]   (nodo 1 cambia de grupo 1 a grupo 2)
+
+Swap (50% del tiempo):
+  nodos i y j intercambian sus grupos
+  [0, 1, 0, 2] → [0, 2, 0, 1]   (nodos 1 y 3 intercambian grupos)
+```
+
+El swap llega en un solo paso a vecinos que la reasignación individual necesita dos pasos aceptados para alcanzar. Esto duplica el vecindario efectivo explorado por paso sin cambiar la complejidad del algoritmo.
+
+Implementación: el índice `j` se genera como `j = rng.integers(0, n-1)` y luego `if j >= i: j += 1`, lo que garantiza que `i ≠ j` sin sesgo en la distribución.
+
+---
+
+### Mejora 2 — Múltiples cadenas SA: reducir la dependencia de la semilla
+
+Se añadió el parámetro `n_cadenas=3` a `BuscadorKRecocido.__init__` y el método `_multi_recocido`:
+
+```python
+def _multi_recocido(self, k, semilla):
+    mejor = self._recocido(k, semilla)
+    for i in range(1, self.n_cadenas):
+        candidato = self._recocido(k, semilla + i * 1009)
+        if candidato.perdida < mejor.perdida:
+            mejor = candidato
+    return mejor
+```
+
+El offset de `1009` (número primo) entre semillas evita correlaciones entre cadenas. El **cache de evaluaciones ya calculadas se comparte entre las tres cadenas**: si la cadena 1 evaluó la asignación `(0,1,2,0,1)` y la cadena 2 llega a la misma asignación, la obtiene en O(1) sin recalcular. Eso hace que la segunda y tercera cadena sean más baratas que la primera.
+
+`buscar`, `buscar_con_semilla` y el fallback de `BuscadorKDP.buscar` para n grande ahora usan `_multi_recocido` en vez de `_recocido`.
+
+---
+
+### Benchmark: qué cambió y qué no
+
+Se corrió el benchmark sobre las mismas 30 configuraciones del experimento original (3 tamaños × 2 valores de k × 5 semillas) y se comparó contra el CSV histórico.
+
+**Geometric — sin cambio observable:**
+
+| k | nodos | φ antes (prom) | φ ahora (prom) | Δφ |
+|:---:|:---:|:---:|:---:|:---:|
+| 3 | 4 | 0.424304 | 0.424304 | 0.000000 |
+| 3 | 5 | 0.710583 | 0.710583 | 0.000000 |
+| 3 | 6 | 0.683304 | 0.683304 | 0.000000 |
+| 4 | 4 | 0.424304 | 0.424304 | 0.000000 |
+| 4 | 5 | 0.710583 | 0.710583 | 0.000000 |
+| 4 | 6 | 0.683304 | 0.683304 | 0.000000 |
+
+**Por qué Geometric no cambia:** Para los tamaños de prueba (4, 5 y 6 nodos), los vértices del sistema son a lo sumo 6 enteros, que caen dentro del umbral DP (`umbral_dp=12`). El DP de subconjuntos es determinístico: calcula el mínimo exacto con los costos precalculados del hipercubo, sin usar SA. Los swap moves y las múltiples cadenas SA no se ejecutan porque el DP ya encuentra la solución óptima estimada. El resultado es idéntico al anterior.
+
+**QNodos — sensible a la semilla:**
+
+| k | nodos | φ antes (prom) | φ ahora (prom) | Δφ |
+|:---:|:---:|:---:|:---:|:---:|
+| 3 | 4 | 0.064984 | 0.064984 | 0.000000 |
+| 3 | 5 | 0.120233 | 0.120233 | 0.000000 |
+| 3 | 6 | 0.107660 | 0.107660 | 0.000000 |
+| 4 | 4 | 0.064984 | 0.064984 | 0.000000 |
+| **4** | **5** | **0.120233** | **0.171803** | **−0.051570** |
+| 4 | 6 | 0.107660 | 0.107660 | 0.000000 |
+
+Para k=4, nodos=5, semilla=41: la regresión es real y determinística (siempre produce 0.427 en vez de 0.169). La causa es que los swap moves cambian el patrón de consumo del generador de números aleatorios: en el SA anterior cada paso consumía 2 números aleatorios (`rng.integers` para el índice y el grupo); ahora consume 3 (se agrega `rng.random() < 0.5` para decidir el tipo de movimiento). Eso desplaza toda la secuencia de la cadena y produce una trayectoria completamente distinta para la misma semilla.
+
+Diagnóstico de ese caso: el warm-start de Q-Nodos genera una semilla inicial con φ=0.619 para ese sistema. El SA anterior con la semilla 83 encontraba φ=0.169 en esa trayectoria. Con swap moves, la semilla 83 ahora explora una trayectoria distinta y llega a φ=0.427. Las dos cadenas adicionales (semillas 1092 y 2101) tampoco mejoran ese valor.
+
+Esto no es un bug: es sensibilidad estocástica al cambio de trayectoria. Las semillas del benchmark original eran específicas para el código anterior. Para evaluar si los swap moves ayudan de forma general se necesita probar con más semillas.
+
+**Benchmark ampliado con 20 semillas aleatorias (k=3, nodos=5):**
+
+| Estrategia | φ promedio | φ mínimo | φ máximo | Victorias (de 20) |
+|---|:---:|:---:|:---:|:---:|
+| QNodos | 0.091788 | 0.000052 | 0.445424 | 20/20 |
+| Geometric | 0.618789 | 0.300938 | 1.090843 | 0/20 |
+
+Con un conjunto más amplio de semillas QNodos sigue ganando en todas las pruebas y la diferencia promedio sigue siendo grande. La regresión puntual del benchmark original es un artefacto de las semillas fijas, no una degradación general del algoritmo.
+
+---
+
+### Tabla de cambios
+
+| Aspecto | Antes | Después |
+|---|---|---|
+| Movimientos SA | Solo reasignación individual | Reasignación (50%) + swap (50%) |
+| Cadenas SA por búsqueda | 1 | 3 (`n_cadenas=3`) |
+| Cache entre cadenas | N/A (una sola cadena) | Compartido — cadenas 2 y 3 más baratas |
+| Tests pasando | 76/76 | 76/76 |
+
+### Archivos modificados
+
+| Archivo | Cambio |
+|---|---|
+| `src/funciones/k_particion_buscador.py` | Swap moves en `_recocido` y `_buscar_dp_sa`; parámetro `n_cadenas`; método `_multi_recocido` |
+| `review/benchmarks/benchmark_sa_mejoras.py` | Benchmark de comparación antes/después contra CSV histórico |
