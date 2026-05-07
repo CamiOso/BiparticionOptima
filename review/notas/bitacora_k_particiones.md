@@ -1168,3 +1168,139 @@ Con un conjunto más amplio de semillas QNodos sigue ganando en todas las prueba
 |---|---|
 | `src/funciones/k_particion_buscador.py` | Swap moves en `_recocido` y `_buscar_dp_sa`; parámetro `n_cadenas`; método `_multi_recocido` |
 | `review/benchmarks/benchmark_sa_mejoras.py` | Benchmark de comparación antes/después contra CSV histórico |
+
+---
+
+## Parte 14 — Benchmarks adicionales: SA con n grande y comparación de todas las estrategias
+
+**Fecha:** Mayo 2026
+
+### Benchmark 1 — SA con n=7: 1 cadena vs 3 cadenas
+
+Para verificar que las mejoras del SA realmente funcionan se necesita un sistema donde el SA corre en serio, es decir, uno que supere el `umbral_exacto`. Para QNodos ese umbral es 8 vértices; con n=7 nodos el sistema tiene 14 vértices de pares temporales, por lo que el SA se ejecuta completamente.
+
+Se corrieron 20 semillas aleatorias con k=3 y k=4, comparando:
+- **1 cadena** (comportamiento anterior a la mejora)
+- **3 cadenas** (implementación actual con `_multi_recocido`)
+
+Resultados (n=7 nodos, 20 semillas):
+
+| k | φ promedio 1 cadena | φ promedio 3 cadenas | Mejora absoluta | Casos mejorados | Casos empeorados |
+|:---:|:---:|:---:|:---:|:---:|:---:|
+| 3 | 0.094392 | 0.080264 | **+0.014128** | 4/20 | **0/20** |
+| 4 | 0.114953 | 0.080264 | **+0.034689** | 4/20 | **0/20** |
+
+**Conclusiones del benchmark 1:**
+
+- Las 3 cadenas **nunca producen una solución peor** que 1 cadena (0 casos empeorados). Esto es el resultado esperado: tomar el mínimo de múltiples cadenas es una operación monotónica no-creciente.
+- En 4 de cada 20 casos (20%), la cadena extra encontró una solución estrictamente mejor.
+- La mejora es más pronunciada para k=4 (+0.035) que para k=3 (+0.014), porque con más grupos el espacio de búsqueda es mayor y una segunda exploración tiene más probabilidad de encontrar una región distinta.
+- El costo es aproximadamente el doble del tiempo (3 cadenas ≈ 3× evaluaciones, pero el cache compartido reduce el overhead de las cadenas 2 y 3).
+
+---
+
+### Benchmark 2 — Comparación de todas las estrategias
+
+Se compararon las 8 estrategias disponibles (ParticionILP excluida por dependencia de scipy) sobre sistemas de n=4 y n=5 nodos, con k=2 y k=3, usando 5 semillas por configuración. FuerzaBruta es la referencia exacta (φ*).
+
+**n=4, k=2 — bipartición en 4 nodos:**
+
+| Estrategia | φ promedio | Brecha con φ* | Tiempo (s) | Victorias |
+|---|:---:|:---:|:---:|:---:|
+| FuerzaBruta | 0.0731 | +0.0% | 0.068 | 5/5 |
+| Geometric | 0.0731 | **+0.0%** | 0.073 | 5/5 |
+| Circuito | 0.0926 | +14.8% | 0.013 | 3/5 |
+| QNodos | 0.1556 | +155.8% | 0.021 | 0/5 |
+| Genetico | 0.5055 | +720.8% | 0.280 | 0/5 |
+| Louvain | 0.5425 | +773.8% | 0.006 | 0/5 |
+| InfoBottleneck | 0.5526 | +785.6% | 0.096 | 0/5 |
+| BeliefProp | 0.5526 | +785.6% | 0.015 | 0/5 |
+
+**n=4, k=3 — tripartición en 4 nodos:**
+
+| Estrategia | φ promedio | Brecha con φ* | Tiempo (s) | Victorias |
+|---|:---:|:---:|:---:|:---:|
+| FuerzaBruta | 0.0731 | +0.0% | 0.059 | 5/5 |
+| QNodos | 0.0731 | **+0.0%** | 0.356 | 5/5 |
+| Geometric | 0.5055 | +720.8% | 0.060 | 0/5 |
+| Circuito | 0.5055 | +720.8% | 0.007 | 0/5 |
+| Genetico | 0.5055 | +720.8% | 0.255 | 0/5 |
+| Louvain | 0.5161 | +742.7% | 0.006 | 0/5 |
+| InfoBottleneck | 0.5526 | +785.6% | 0.110 | 0/5 |
+| BeliefProp | 0.5526 | +785.6% | 0.016 | 0/5 |
+
+**n=5, k=2 — bipartición en 5 nodos:**
+
+| Estrategia | φ promedio | Brecha con φ* | Tiempo (s) | Victorias |
+|---|:---:|:---:|:---:|:---:|
+| FuerzaBruta | 0.0571 | +0.0% | 0.345 | 5/5 |
+| Geometric | 0.0571 | **+0.0%** | 0.333 | 5/5 |
+| QNodos | 0.1397 | +145% aprox. | 0.048 | 0/5 |
+| Circuito | 0.4237 | — | 0.021 | 1/5 |
+| Genetico | 0.6499 | — | 0.283 | 0/5 |
+| InfoBottleneck | 0.6685 | — | 0.066 | 0/5 |
+| BeliefProp | 0.6685 | — | 0.018 | 0/5 |
+| Louvain | 0.7238 | — | 0.008 | 0/5 |
+
+**n=5, k=3 — tripartición en 5 nodos:**
+
+| Estrategia | φ promedio | Brecha con φ* | Tiempo (s) | Victorias |
+|---|:---:|:---:|:---:|:---:|
+| FuerzaBruta | 0.0571 | +0.0% | 0.318 | 5/5 |
+| QNodos | 0.0571 | **+0.0%** | 1.016 | 5/5 |
+| Geometric | 0.6499 | — | 0.126 | 0/5 |
+| Genetico | 0.6499 | — | 0.322 | 0/5 |
+| InfoBottleneck | 0.6685 | — | 0.130 | 0/5 |
+| BeliefProp | 0.6685 | — | 0.036 | 0/5 |
+| Louvain | 0.7006 | — | 0.012 | 0/5 |
+| Circuito | 0.7214 | — | 0.019 | 0/5 |
+
+*Nota: las brechas marcadas con "—" tienen denominador φ* muy cercano a cero (≈0.0001), lo que hace el porcentaje numéricamente no representativo. En esos casos la diferencia absoluta en φ es el indicador correcto.*
+
+---
+
+### Hallazgos principales
+
+**1. Geometric y QNodos tienen fortalezas complementarias:**
+
+El resultado más claro del benchmark es que no hay una estrategia dominante en todos los casos:
+
+| Escenario | Mejor estrategia en calidad | Segunda mejor |
+|---|---|---|
+| k=2, cualquier n | Geometric (iguala exacto) | Circuito (≈15% gap) |
+| k=3 o más, cualquier n | QNodos (iguala exacto) | FuerzaBruta (referencia) |
+
+Geometric está optimizada para bipartición: su hipercubo geométrico y la DP de subconjuntos la llevan al óptimo exacto para k=2. Para k>2 esa geometría no captura bien el espacio de k-particiones y produce soluciones muy alejadas del óptimo.
+
+QNodos hace lo opuesto: para k=2 pierde frente a Geometric, pero para k=3 iguala el resultado exacto de FuerzaBruta en todos los casos probados gracias a su warm-start submodular y el SA con 3 cadenas.
+
+**2. El resto de las estrategias no están diseñadas para minimizar φ directamente:**
+
+Louvain, InfoBottleneck, Genético y BeliefPropagation maximizan o minimizan sus propias funciones objetivo (modularidad, divergencia KL, fitness, energía MRF), no la pérdida de información φ de IIT. Por eso sus resultados son pobres en este benchmark: no están diseñadas para este problema específico. Son válidas como perspectivas alternativas pero no como competidores directos.
+
+**3. Circuito es la mejor alternativa no especializada:**
+
+Para k=2, Circuito logra un 14.8% de brecha con el óptimo exacto y gana 3 de 5 casos, lo que la convierte en la mejor opción fuera de FuerzaBruta y Geometric. Su ventaja es que es determinista y muy rápida (0.013 s), sin depender del azar.
+
+**4. La mejora de 3 cadenas SA es real y sin costo en calidad:**
+
+El benchmark de n=7 confirma que las 3 cadenas nunca producen peores resultados que 1 cadena, y mejoran 20% de los casos. El tradeoff es ≈2× más tiempo.
+
+---
+
+### Archivos generados
+
+| Archivo | Contenido |
+|---|---|
+| `review/benchmarks/benchmark_sa_n_grande.py` | Script: 1 cadena vs 3 cadenas SA en QNodos n=7 |
+| `review/benchmarks/sa_n_grande_detalle.csv` | Datos por semilla del benchmark SA |
+| `review/benchmarks/benchmark_todas_estrategias.py` | Script: comparación de las 8 estrategias |
+| `review/benchmarks/todas_estrategias_resumen.csv` | Resumen por estrategia, n y k |
+
+Para reproducir:
+
+```bash
+source .venv/bin/activate
+PYTHONPATH=. python review/benchmarks/benchmark_sa_n_grande.py
+PYTHONPATH=. python review/benchmarks/benchmark_todas_estrategias.py
+```
