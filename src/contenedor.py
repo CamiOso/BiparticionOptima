@@ -115,10 +115,14 @@ class Contenedor:
             modo = "biharmonico" if nombre_lower in {"biharmonico", "airy"} else "laplaciano"
             return ParticionVariacional(tpm, config=self._config, modo=modo)
 
+        if nombre_lower in {"bb", "branch_bound", "branchbound", "branch_and_bound"}:
+            from src.estrategias.branch_bound import BranchBound
+            return BranchBound(tpm, config=self._config)
+
         raise ValueError(
             f"Estrategia desconocida: '{nombre}'. "
             "Opciones: fuerza_bruta, phi, qnodos, geometric, circuito, "
-            "ib, louvain, genetico, ilp, bp, remcmc, variacional."
+            "ib, louvain, genetico, ilp, bp, remcmc, variacional, bb."
         )
 
     # ── Fábricas de casos de uso ─────────────────────────────────────────────

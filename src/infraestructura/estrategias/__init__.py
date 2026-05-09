@@ -28,6 +28,7 @@ from src.estrategias.particion_ilp import ParticionILP
 from src.estrategias.belief_propagation import BeliefPropagation
 from src.estrategias.remcmc import REMCMC
 from src.estrategias.variacional import ParticionVariacional
+from src.estrategias.branch_bound import BranchBound
 
 __all__ = [
     "FuerzaBruta",
@@ -42,4 +43,5 @@ __all__ = [
     "BeliefPropagation",
     "REMCMC",
     "ParticionVariacional",
+    "BranchBound",
 ]
