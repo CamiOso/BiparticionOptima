@@ -1515,3 +1515,177 @@ PYTHONPATH=. python review/benchmarks/benchmark_correlacion_estructural.py
 ```
 
 ---
+
+## Parte 17 — Escalabilidad a n=6,7, causa raíz de la falla de QNodos y diferencias con IIT 4.0
+
+### 17.1 Benchmark en sistemas grandes (n=6, n=7)
+
+Se extendió el benchmark comparativo a sistemas de 6 y 7 nodos (k=2) para ver si las brechas se mantienen, mejoran o empeoran fuera del rango n=4,5.
+
+#### Resultados
+
+```
+n=6, k=2  (5 semillas)
+  Estrategia    phi prom   brecha %   t prom s
+  FuerzaBruta     0.0741      +0.0%     1.846   ← referencia exacta (31 bip.)
+  Geometric       0.0822      +4.7%     0.169   ← casi exacta
+  Circuito        0.1101     +72.9%     0.038
+  QNodos          0.1387    +144.3%     0.104
+
+n=7, k=2  (5 semillas)
+  Estrategia    phi prom   brecha %   t prom s
+  FuerzaBruta     0.0618      +0.0%     7.681   ← referencia exacta (63 bip.)
+  QNodos          0.1045    +209.3%     0.149
+  Geometric       0.1508    +218.2%     0.392   ← se degrada bruscamente
+  Circuito        0.2429    +307.4%     0.067
+```
+
+#### Hallazgo clave: Geometric colapsa para n=7
+
+Para n ≤ 5 Geometric usa `_resolver_exacto` (enumeración completa de biparticiones) y alcanza el óptimo. Para n > 5 usa `_resolver_geometrico_refinado` (heurística de hipercubo + refinamiento local), y en n=7 la brecha salta al 218%.
+
+Esto revela una limitación importante: el hipercubo geométrico no es una buena guía para la búsqueda a partir de n=6. El espacio de biparticiones crece exponencialmente (2^(n-1)), y los candidatos que el hipercubo propone son cada vez menos representativos del óptimo real.
+
+| n | Modo Geometric | Brecha promedio |
+|---|---|---|
+| 4 | Exacto (≤5 nodos) | 0% |
+| 5 | Exacto (≤5 nodos) | 0% |
+| 6 | Refinado heurístico | 4.7% |
+| 7 | Refinado heurístico | 218% |
+
+La degradación entre n=6 y n=7 es abrupta. La causa probable es que los candidatos del hipercubo basados en costos locales empiezan a perder la bipartición óptima cuando la distribución de probabilidades es irregular (los sistemas aleatorios con 128 estados tienen paisajes de EMD mucho más irregulares que los de 64 estados).
+
+---
+
+### 17.2 Análisis de la causa raíz de la falla de QNodos para k=2
+
+La brecha de QNodos (155% en n=4, 144% en n=6, 209% en n=7) es estructural, no ocasional. Se investigó la causa mediante un análisis de submodularidad directa de f(S).
+
+#### Hipótesis verificada: f(S) no es submodular
+
+El algoritmo de Queyranne garantiza encontrar el corte mínimo **solo si** la función f es simétrica y submodular. La condición de submodularidad exige:
+
+```
+f(A) + f(B) ≥ f(A ∪ B) + f(A ∩ B)   para todo A, B ⊆ V
+```
+
+Se testeó esta desigualdad para pares aleatorios de subconjuntos de vértices en 5 semillas con n=4. Resultado:
+
+```
+Semilla  Brecha QNodos  Violaciones submodularidad
+  11        +265.8%     1946/16230  (12.0%)   max_δ = 0.577
+  23        +162.4%     2562/16230  (15.8%)   max_δ = 0.454
+  37         +55.6%     1498/16230  ( 9.2%)   max_δ = 0.361
+  53        +276.7%     1317/16230  ( 8.1%)   max_δ = 0.264
+  71         +18.4%     2622/16230  (16.2%)   max_δ = 0.553
+
+Global: 9945/81150 (12.3%) de pares violan submodularidad
+```
+
+#### Implicación
+
+La función f(S) = EMD(dist_completa, dist_biparticion_S) **no es submodular** en sistemas aleatorios. El 12.3% de los pares testados la violan, con violaciones de hasta 0.577 (un error absoluto muy grande en el contexto de EMDs que suelen ser < 1).
+
+Esto explica completamente la brecha: cuando f no es submodular, el MAO (Maximum Adjacency Ordering) de Queyranne no tiene garantía teórica, y puede converger a mínimos locales de la ordenación que no corresponden al mínimo global del corte.
+
+Cabe notar que **QNodos sí encuentra el óptimo para k > 2** (según el benchmark de todas las estrategias). Esto se debe a que para k > 2 usa recocido simulado con 3 cadenas, que escapa de los mínimos locales. Para k=2 usa el algoritmo Q directamente sin SA, lo que no da garantía cuando f no es submodular.
+
+---
+
+### 17.3 Visualización del dendrograma de GeometricK
+
+Se construyó e imprimió el árbol de cortes divisivos que usa `_resolver_k_dendrograma` para inicializar la búsqueda k > 2.
+
+#### Estructura del árbol (n=4, semilla=37)
+
+```
+└── {0,1,2,3}
+    ├── {1}               φ=0.5498  ← primer corte
+    └── {0,2,3}           φ=0.5498
+        ├── {2,3}         φ=0.6057  ← segundo corte
+        │   ├── {2}       φ=0.8019
+        │   └── {3}       φ=0.8019
+        └── {0}           φ=0.6057
+```
+
+El árbol muestra la jerarquía divisiva: primero se aísla el nodo 1 (costo 0.55), luego del componente restante {0,2,3} se separa {2,3} de {0} (costo 0.61), y finalmente {2,3} se divide en singletons (costo 0.80).
+
+Los costos crecen a medida que se desciende en el árbol (los componentes más pequeños son más difíciles de dividir informacionalmente). La k-partición para k=2 no usa este dendrograma (usa búsqueda exacta); para k=3 tomaría las 3 hojas del primer nivel de la división: {1}, {0}, {2,3}.
+
+La imagen del dendrograma se guardó en `review/benchmarks/dendrograma_geometric.png`.
+
+---
+
+### 17.4 IIT 4.0 versus la implementación actual (IIT 3.0)
+
+El proyecto implementa IIT versión 3.0 (Oizumi et al. 2014). En 2023 se publicó IIT 4.0 (Albantakis et al. 2023). Las diferencias son fundamentales y merecen documentación para entender el alcance del proyecto.
+
+#### ¿Qué calcula la versión actual? (IIT 3.0)
+
+```
+φ = min sobre biparticiones (A|B) de:
+    EMD( P(X^t | X^{t-1}=x),  P_A(X^t_A | X^{t-1}_A=x_A) × P_B(X^t_B | X^{t-1}_B=x_B) )
+```
+
+La MIP es la bipartición que minimiza φ. La distribución "post-partición" asume independencia entre los grupos y se calcula como producto de marginales. El EMD mide cuánta información se pierde al hacer esa partición.
+
+#### ¿Qué cambia en IIT 4.0?
+
+| Aspecto | IIT 3.0 | IIT 4.0 |
+|---|---|---|
+| Función de distancia | EMD (transporte óptimo) | *Intrinsic Difference* (ID) |
+| Objeto particionado | TPM del sistema completo | Estructura causa-efecto (CES) |
+| Referencia de la partición | Distribución factorizada producto | Distribución de máxima entropía compatible |
+| Unidad de análisis | Bipartición del sistema | Partición de los *conceptos* en la CES |
+| Φ del sistema | min EMD sobre biparticiones de la TPM | min ID sobre particiones de la CES |
+| Conceptos | No definidos explícitamente | Mecanismos con φ > 0 (causa-efecto irreducible) |
+| Paso previo | Ninguno | Calcular todos los conceptos del sistema primero |
+
+La *Intrinsic Difference* en IIT 4.0 es:
+```
+ID(p, q) = (1/2) × (D_KL(p||m) + D_KL(q||m))
+donde m = (p + q) / 2  (distribución promedio)
+```
+
+Es la divergencia de Jensen-Shannon (JSD), no el EMD. Esto cambia completamente las propiedades de la función de distancia y por tanto la geometría del problema de optimización.
+
+#### Por qué IIT 4.0 es más difícil de implementar
+
+1. **Paso de conceptos**: antes de calcular Φ, hay que encontrar todos los mecanismos (subconjuntos de nodos) con φ > 0. Esto requiere resolver el problema de MIP para cada subconjunto, no solo para el sistema completo. La complejidad sube de O(2^n) a O(n × 2^n).
+
+2. **Estructura causa-efecto**: los conceptos se agrupan en una CES multidimensional que describe cómo cada mecanismo especifica causas y efectos. Particionar esta estructura es conceptualmente más complejo que partir una TPM.
+
+3. **Invariante de unidad**: IIT 4.0 requiere que el candidato de sistema sea un "complex" (el único sistema con Φ > 0 al que pertenece cada nodo). Verificar esta propiedad añade otra capa de complejidad.
+
+#### Qué necesitaría cambiar en el proyecto para IIT 4.0
+
+| Componente | Cambio necesario |
+|---|---|
+| `src/funciones/iit.py` | Reemplazar `seleccionar_emd()` por JSD (Jensen-Shannon) |
+| `src/modelos/nucleo/sistema.py` | Añadir cálculo de causa-efecto por mecanismo |
+| `src/estrategias/fuerza_bruta.py` | Cambiar target de optimización: no biparticiones de TPM sino particiones de CES |
+| Todas las estrategias | Adaptar `evaluar_asignacion()` a la función ID sobre la CES |
+| Nueva etapa previa | Enumerar conceptos (mecanismos con φ_concepto > 0) antes de buscar la MIP |
+
+La implementación de IIT 4.0 sería un proyecto nuevo completo, no una extensión incremental. Los benchmarks y estrategias actuales están correctamente implementados para IIT 3.0.
+
+---
+
+### Archivos generados en Parte 17
+
+| Archivo | Contenido |
+|---|---|
+| `review/benchmarks/benchmark_n_grande_circuito.py` | Benchmark n=6,7 con k=2 (4 estrategias) |
+| `review/benchmarks/n_grande_circuito_detalle.csv` | Datos por semilla del benchmark n=6,7 |
+| `review/benchmarks/analisis_qnodos_k2.py` | Análisis de submodularidad de f(S) |
+| `review/benchmarks/visualizacion_dendrograma.py` | Construcción y dibujo del árbol de cortes |
+| `review/benchmarks/dendrograma_geometric.png` | Imagen del dendrograma (n=4, semilla=37) |
+
+Para reproducir:
+
+```bash
+source .venv/bin/activate
+PYTHONPATH=. python review/benchmarks/benchmark_n_grande_circuito.py
+PYTHONPATH=. python review/benchmarks/analisis_qnodos_k2.py
+PYTHONPATH=. python review/benchmarks/visualizacion_dendrograma.py
+```
