@@ -1171,6 +1171,148 @@ Con un conjunto más amplio de semillas QNodos sigue ganando en todas las prueba
 
 ---
 
+## Parte 15 — Algoritmos macro: dendrograma, árbol de contracciones y Circuito con hipergrafo
+
+**Fecha:** Mayo 2026
+
+### Motivación
+
+La bitácora hasta aquí documentaba k-particiones implementadas con búsqueda local + SA + DP.
+Esos enfoques ignoran la **estructura jerárquica natural** del sistema: en lugar de "buscar k grupos
+directamente", la teoría dice que la jerarquía de divisiones óptimas ya está implícita en el grafo
+causal. Esta parte implementa los tres algoritmos macro diseñados en el pseudocódigo teórico.
+
+---
+
+### 15.1 — GeometricK: dendrograma de cortes divisivos
+
+**Archivos modificados:** `src/strategies/geometric.py`
+
+**Nuevo método:** `_bipartir_componente(comp_nodos, alcance_total, mec_total)` y
+`_resolver_k_dendrograma(nodos, alcance_total, mec_total, k)`.
+
+**Idea:** en lugar de pasar directamente a la búsqueda DP+SA, construir primero un árbol de
+divisiones óptimas (dendrograma). En cada paso se divide el componente cuya bipartición
+tiene el menor EMD (la división más natural). La k-partición es la asignación de los k
+componentes hoja del árbol en ese momento.
+
+```
+árbol = {raíz: todos_los_nodos}
+heap = [(costo_split(raíz), raíz)]
+
+MIENTRAS hojas < k:
+    comp = heap.pop_min()
+    (izq, der) = bipartir_componente(comp)
+    hojas: raíz → izq, der
+    si |izq|>1: heap.push(costo_split(izq), izq)
+    si |der|>1: heap.push(costo_split(der), der)
+
+asignación = {nodo → índice_hoja}
+```
+
+Este resultado se usa como warm-start para BuscadorKDP+SA. El DP refinará si el dendrograma
+no es óptimo globalmente.
+
+---
+
+### 15.2 — QNodesK: árbol de contracciones de Queyranne
+
+**Archivos modificados:** `src/estrategias/q_nodos.py`
+
+**Nuevo método:** `_k_particion_arbol_contracciones(vertices, k)`.
+
+**Idea:** el algoritmo de Queyranne ejecutado por n-k pasos produce exactamente k grupos
+activos. Cada paso contrae el par pendiente (guiado por la función submodular de EMD), lo
+que equivale a fusionar los grupos más fuertemente acoplados primero. Los k grupos que
+quedan después de n-k contracciones son los más naturalmente separados según la submodularidad.
+
+```
+PARA paso en range(n - k):
+    pendant = MaxAdjOrdering(activos)   # MAO sin early-stopping
+    union(penultimate, pendant)         # fusión en union-find
+    contraer(activos)
+
+grupos = componentes_union_find()
+```
+
+Si este warm-start falla, cae al método recursivo anterior (`_particionar_recursivo_q`).
+
+---
+
+### 15.3 — Estrategia Circuito: Laplaciano de hipergrafo
+
+**Archivos modificados:** `src/estrategias/circuito.py`
+
+**Nuevos métodos:** `_encontrar_circuitos(n, W, umbral)` y `_laplaciano_hipergrafo(n, circuitos)`.
+
+**Idea:** reemplazar el Laplaciano de conductancias (L = D - W, que ignora la topología cíclica)
+por el Laplaciano del hipergrafo de circuitos:
+
+```
+H[nodo][circuito] = 1  si el nodo pertenece al circuito
+W_diag = fuerzas de circuitos (producto de pesos de aristas)
+L_H = D_v - H * diag(W_diag) * H^T
+```
+
+Los eigenvectores de L_H ahora reflejan qué nodos comparten los mismos ciclos causales, no solo
+cuán conductivos son sus pares de conexiones.
+
+**Fallback:** si no hay circuitos (grafo acíclico o n > 14), usa el Laplaciano de conductancias.
+
+---
+
+### 15.4 — Validación experimental: métrica de circuitos vs EMD
+
+**Archivo:** `review/benchmarks/benchmark_metrica_circuitos.py`
+**Resultado:** `review/benchmarks/metrica_circuitos_vs_emd.csv`
+
+**Pregunta:** ¿la suma de fuerzas de circuitos rotos por una bipartición correlaciona con su EMD?
+
+**Resultados (20 sistemas aleatorios, n=4 y n=5):**
+
+| n | Spearman ρ promedio | Rango | Correlación positiva |
+|:---:|:---:|:---:|:---:|
+| 4 | +0.065 | [-0.05, +0.18] | 7/10 |
+| 5 | -0.008 | [-0.14, +0.19] | 6/10 |
+| **Total** | **+0.028** | **[-0.14, +0.19]** | **13/20** |
+
+**Conclusión:** la correlación es prácticamente nula (ρ ≈ 0.03). La métrica de circuitos rotos
+**no es un buen proxy para EMD** en sistemas aleatorios.
+
+**¿Por qué?** El EMD mide la distancia entre distribuciones de probabilidad condicionales, que
+dependen de los valores específicos de la TPM (no solo de qué aristas existen). Los circuitos
+capturan la topología causal (qué influye a qué) pero no la *magnitud* de esa influencia ni las
+interacciones estadísticas de orden superior que el EMD sí captura.
+
+**Implicación para la estrategia Circuito:** el Laplaciano de hipergrafo es una propuesta
+teóricamente motivada pero empíricamente incierta para sistemas aleatorios. Puede ser más
+relevante en sistemas con estructura específica (por ejemplo, sistemas diseñados intencionalmente
+con bucles causales fuertes). Los tests siguen pasando (76/76) y el fallback al Laplaciano de
+conductancias garantiza robustez.
+
+---
+
+### Resumen de cambios
+
+| Archivo | Cambio |
+|---|---|
+| `src/strategies/geometric.py` | `_bipartir_componente` + `_resolver_k_dendrograma`; warm-start k>2 usa dendrograma |
+| `src/estrategias/q_nodos.py` | `_k_particion_arbol_contracciones`; warm-start k>2 usa árbol de contracciones |
+| `src/estrategias/circuito.py` | `_encontrar_circuitos` + `_laplaciano_hipergrafo`; bipartición y k>2 usan L_H |
+| `review/benchmarks/benchmark_metrica_circuitos.py` | benchmark de correlación ρ(EMD, circuitos) |
+| `review/benchmarks/metrica_circuitos_vs_emd.csv` | datos del benchmark (20 sistemas) |
+| `review/notas/pseudocodigo_k_particiones_macro.md` | pseudocódigos teóricos de los tres algoritmos |
+
+Para reproducir los benchmarks:
+
+```bash
+source .venv/bin/activate
+PYTHONPATH=. python review/benchmarks/benchmark_metrica_circuitos.py
+PYTHONPATH=. python -m pytest tests/ -q
+```
+
+---
+
 ## Parte 14 — Benchmarks adicionales: SA con n grande y comparación de todas las estrategias
 
 **Fecha:** Mayo 2026

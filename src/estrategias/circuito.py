@@ -198,6 +198,83 @@ class Circuito(SIA):
         return np.diag(W.sum(axis=1)) - W
 
     # ------------------------------------------------------------------
+    # Circuitos causales (Johnson simplificado) y Laplaciano de hipergrafo
+    # ------------------------------------------------------------------
+
+    def _encontrar_circuitos(
+        self,
+        n: int,
+        W: np.ndarray,
+        umbral: float = 0.0,
+    ) -> list[tuple[list[int], float]]:
+        """Todos los circuitos simples del grafo dirigido W > umbral.
+
+        Usa DFS con backtracking (equivalente al algoritmo de Johnson para
+        grafos pequenos). Cada circuito tiene asociada su fuerza = producto
+        de los pesos de sus aristas. Limitado a n<=14 para tractabilidad.
+        """
+        if n > 14:
+            return []
+
+        adj = [[W[i][j] if W[i][j] > umbral else 0.0 for j in range(n)] for i in range(n)]
+        circuitos: list[tuple[list[int], float]] = []
+        visitado = [False] * n
+
+        def dfs(inicio: int, actual: int, camino: list[int], peso: float) -> None:
+            for vecino in range(n):
+                w = adj[actual][vecino]
+                if w == 0.0:
+                    continue
+                if vecino == inicio and len(camino) >= 2:
+                    if peso * w > 0.0:
+                        circuitos.append((list(camino), peso * w))
+                elif vecino > inicio and not visitado[vecino]:
+                    visitado[vecino] = True
+                    camino.append(vecino)
+                    dfs(inicio, vecino, camino, peso * w)
+                    camino.pop()
+                    visitado[vecino] = False
+
+        for s in range(n):
+            visitado[s] = True
+            dfs(s, s, [s], 1.0)
+            visitado[s] = False
+
+        return circuitos
+
+    def _laplaciano_hipergrafo(
+        self,
+        n: int,
+        circuitos: list[tuple[list[int], float]],
+    ) -> np.ndarray:
+        """Laplaciano del hipergrafo de circuitos causales.
+
+        Cada circuito es un hiperarco que conecta sus nodos con peso = su
+        fuerza. El Laplaciano es L_H = D_v - H W H^T, donde:
+          H[nodo][circuito] = 1 si el nodo pertenece al circuito
+          W = diagonal de fuerzas de circuitos
+          D_v[i] = suma de fuerzas de circuitos que contienen al nodo i
+
+        Captura la topologia ciclica real del sistema, no solo la conectividad
+        par-a-par que usa el Laplaciano de conductancias.
+        """
+        m = len(circuitos)
+        if m == 0:
+            return np.zeros((n, n), dtype=np.float64)
+
+        H = np.zeros((n, m), dtype=np.float64)
+        for c_idx, (ciclo, fuerza) in enumerate(circuitos):
+            for nodo_idx in ciclo:
+                H[nodo_idx, c_idx] = 1.0
+
+        W_diag = np.array([fuerza for _, fuerza in circuitos], dtype=np.float64)
+        # L_H = D_v - H diag(W) H^T
+        HW = H * W_diag[np.newaxis, :]
+        HWHT = HW @ H.T
+        D_v = np.diag(HWHT.sum(axis=1))
+        return D_v - HWHT
+
+    # ------------------------------------------------------------------
     # Biparticion espectral (k = 2)
     # ------------------------------------------------------------------
 
@@ -249,7 +326,16 @@ class Circuito(SIA):
             ]
 
         W = self._construir_conductancias(nodos)
-        L = self._laplaciano(W)
+
+        # Preferir el Laplaciano de hipergrafo cuando existen circuitos causales.
+        # Cae al Laplaciano de conductancias si no hay circuitos (n grande o grafo acíclico).
+        circuitos = self._encontrar_circuitos(n, W, umbral=0.0)
+        if circuitos:
+            L = self._laplaciano_hipergrafo(n, circuitos)
+            if np.allclose(L, 0):
+                L = self._laplaciano(W)
+        else:
+            L = self._laplaciano(W)
 
         try:
             eigenvalores, eigenvectores = np.linalg.eigh(L)
@@ -318,8 +404,16 @@ class Circuito(SIA):
         k: int,
     ) -> _ResultadoParticionK:
         W = self._construir_conductancias(nodos)
-        L = self._laplaciano(W)
         n = len(nodos)
+
+        # Usar Laplaciano de hipergrafo si hay circuitos; conductancias como fallback.
+        circuitos = self._encontrar_circuitos(n, W, umbral=0.0)
+        if circuitos:
+            L = self._laplaciano_hipergrafo(n, circuitos)
+            if np.allclose(L, 0):
+                L = self._laplaciano(W)
+        else:
+            L = self._laplaciano(W)
         k_eff = min(k, n)
 
         asignacion = self._embedding_k(L, n, k_eff)

@@ -126,9 +126,12 @@ class QNodos(SIA):
 
         if k > 2:
             self._cache_k_particiones.clear()
-            # Warm-start: particion recursiva Q con memoizacion DP.
-            memo_q: dict[tuple, tuple[int, ...]] = {}
-            semilla_asig = self._particionar_recursivo_q(vertices, k, memo_q)
+            # Warm-start 1: arbol de contracciones — para despues de n-k pasos de Queyranne.
+            semilla_asig = self._k_particion_arbol_contracciones(vertices, k)
+            # Warm-start 2 (fallback): particion recursiva Q con memoizacion DP.
+            if semilla_asig is None:
+                memo_q: dict[tuple, tuple[int, ...]] = {}
+                semilla_asig = self._particionar_recursivo_q(vertices, k, memo_q)
 
             buscador = _BuscadorKQNodos(
                 vertices=vertices,
@@ -298,6 +301,110 @@ class QNodos(SIA):
         ):
             return [conjunto]
         return [(int(t), int(i)) for t, i in conjunto]
+
+    def _k_particion_arbol_contracciones(
+        self,
+        vertices: list[tuple[int, int]],
+        k: int,
+    ) -> tuple[int, ...] | None:
+        """K-particion desde el arbol de contracciones de Queyranne.
+
+        Ejecuta exactamente n-k pasos del algoritmo de Queyranne (MAO +
+        contraccion), que corresponden a las n-k fusiones mas "costosas"
+        (fuerte acoplamiento). Los k grupos resultantes son los componentes
+        activos al terminar esos n-k pasos.
+
+        No hace early-stopping para no saltarse contracciones intermedias.
+        Guarda y restaura el estado de la instancia para no interferir con
+        otras llamadas.
+        """
+        n = len(vertices)
+        if n <= 1 or k >= n:
+            return None
+        k_eff = min(k, n)
+        n_pasos = n - k_eff  # contracciones a realizar
+
+        # Guardar estado
+        vertices_prev = self.vertices
+        mem_prev = dict(self.memoria_grupo_candidato)
+        self.vertices = set(vertices)
+        self.memoria_grupo_candidato.clear()
+
+        parent: dict[tuple[int, int], tuple[int, int]] = {v: v for v in vertices}
+
+        def find(x: tuple[int, int]) -> tuple[int, int]:
+            while parent[x] != x:
+                parent[x] = parent[parent[x]]
+                x = parent[x]
+            return x
+
+        def union(a: tuple[int, int], b: tuple[int, int]) -> None:
+            ra, rb = find(a), find(b)
+            if ra != rb:
+                parent[ra] = rb
+
+        try:
+            vertices_act: list = list(vertices)
+            for _ in range(n_pasos):
+                if len(vertices_act) < 2:
+                    break
+
+                omegas: list = [vertices_act[0]]
+                deltas: list = list(vertices_act[1:])
+                emd_candidata = float("inf")
+                dist_candidata: np.ndarray | None = None
+
+                for _ in range(max(0, len(deltas) - 1)):
+                    emd_local = float("inf")
+                    mejor_idx = 0
+                    for idx, delta in enumerate(deltas):
+                        emd_u, emd_d, dist_d = self.funcion_submodular(delta, omegas)
+                        ei = emd_u - emd_d
+                        if ei < emd_local:
+                            emd_local = ei
+                            mejor_idx = idx
+                            emd_candidata = emd_d
+                            dist_candidata = dist_d
+                    omegas.append(deltas[mejor_idx])
+                    deltas.pop(mejor_idx)
+
+                if deltas:
+                    pendant = deltas[-1]
+                    penultimate = omegas[-1]
+                    clave = self._normalizar_grupo(pendant)
+                    self.memoria_grupo_candidato[clave] = (float(emd_candidata), dist_candidata)
+
+                    orig_p = self._desplegar_nodos(pendant)
+                    orig_pp = self._desplegar_nodos(penultimate)
+                    todos = orig_pp + orig_p
+                    for v in todos[1:]:
+                        union(todos[0], v)
+
+                    nuevo = orig_pp + orig_p
+                    omegas.pop()
+                    omegas.append(nuevo)
+                    vertices_act = omegas
+
+        except Exception:
+            self.vertices = vertices_prev
+            self.memoria_grupo_candidato = mem_prev
+            return None
+
+        self.vertices = vertices_prev
+        self.memoria_grupo_candidato = mem_prev
+
+        raices: dict[tuple[int, int], int] = {}
+        sig = 0
+        asig: list[int] = []
+        for v in vertices:
+            r = find(v)
+            if r not in raices:
+                raices[r] = sig
+                sig += 1
+            asig.append(raices[r])
+
+        result = tuple(asig)
+        return result if len(set(result)) >= 2 else None
 
     def _particionar_recursivo_q(
         self,

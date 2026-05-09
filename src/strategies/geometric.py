@@ -3,6 +3,7 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from functools import partial
+import heapq
 import os
 
 import numpy as np
@@ -154,14 +155,18 @@ class Geometric(SIA):
 
         if k > 2:
             nodos = sorted(set(alcance_total) | set(mecanismo_total))
-            # Reusar costos del hipercubo geometrico para inicializacion DP sin coste extra.
             _, _, costos_locales, _ = self._precalcular_busqueda_geometrica(
                 alcance_total, mecanismo_total
             )
-            # Warm-start desde biparticion optima: convierte mascara k=2 en semilla k-grupos.
-            semilla_k = self._semilla_desde_biparticion(
-                nodos, alcance_total, mecanismo_total, costos_locales
+            # Warm-start 1: dendrograma divisivo — jerarquia de cortes optimos.
+            semilla_k = self._resolver_k_dendrograma(
+                nodos, alcance_total, mecanismo_total, k
             )
+            # Warm-start 2 (fallback): mascara de mejor biparticion del hipercubo.
+            if semilla_k is None:
+                semilla_k = self._semilla_desde_biparticion(
+                    nodos, alcance_total, mecanismo_total, costos_locales
+                )
             buscador = _BuscadorKGeometric(
                 nodos=nodos,
                 sistema=self.sia_subsistema,
@@ -941,6 +946,125 @@ class Geometric(SIA):
         resultado = (perdida, distribucion)
         self._cache_particiones[clave] = resultado
         return resultado
+
+    # ------------------------------------------------------------------
+    # Dendrograma divisivo para k-particiones
+    # ------------------------------------------------------------------
+
+    def _bipartir_componente(
+        self,
+        comp_nodos: list[int],
+        alcance_total: tuple[int, ...],
+        mecanismo_total: tuple[int, ...],
+    ) -> tuple[frozenset, frozenset, float] | None:
+        """Mejor biparticion dentro de un componente del dendrograma.
+
+        Enumera todas las biparticiones propias del subconjunto comp_nodos
+        y evalua cada una con _evaluar_particion (en el contexto del sistema
+        completo). Retorna (izq, der, perdida) o None si no es divisible.
+        """
+        n = len(comp_nodos)
+        if n <= 1:
+            return None
+
+        comp_set = frozenset(comp_nodos)
+        mejor_perdida = float("inf")
+        mejor_izq: frozenset = comp_set
+
+        # Para componentes grandes muestrear solo los bits dentro del componente.
+        total_mascaras = 1 << n
+        for mask in range(1, total_mascaras - 1):
+            nodos_izq = frozenset(comp_nodos[i] for i in range(n) if mask & (1 << i))
+            nodos_der = comp_set - nodos_izq
+            if not nodos_izq or not nodos_der:
+                continue
+            subalcance = tuple(v for v in alcance_total if v in nodos_izq)
+            submecanismo = tuple(v for v in mecanismo_total if v in nodos_izq)
+            if not subalcance and not submecanismo:
+                # Intentar con el otro lado
+                subalcance = tuple(v for v in alcance_total if v in nodos_der)
+                submecanismo = tuple(v for v in mecanismo_total if v in nodos_der)
+                if not subalcance and not submecanismo:
+                    continue
+                nodos_izq, nodos_der = nodos_der, nodos_izq
+            perdida, _ = self._evaluar_particion(subalcance, submecanismo)
+            if perdida < mejor_perdida:
+                mejor_perdida = perdida
+                mejor_izq = nodos_izq
+
+        nodos_der = comp_set - mejor_izq
+        if not nodos_der:
+            return None
+        return mejor_izq, nodos_der, mejor_perdida
+
+    def _resolver_k_dendrograma(
+        self,
+        nodos: list[int],
+        alcance_total: tuple[int, ...],
+        mecanismo_total: tuple[int, ...],
+        k: int,
+    ) -> tuple[int, ...] | None:
+        """K-particion via dendrograma de cortes divisivos minimos.
+
+        En cada paso se divide el componente cuya mejor biparticion tiene
+        el menor EMD (division mas natural). La k-particion es la asignacion
+        de los k componentes hoja resultantes.
+        """
+        if len(nodos) < 2:
+            return None
+
+        comp_raiz = frozenset(nodos)
+        split = self._bipartir_componente(list(comp_raiz), alcance_total, mecanismo_total)
+        if split is None:
+            return None
+
+        # Heap: (perdida_split, id_unico, frozenset_componente)
+        # Los splits precalculados se guardan en un dict indexado por id.
+        splits_info: dict[int, tuple[frozenset, frozenset, float]] = {}
+        id_cnt = 0
+        splits_info[id_cnt] = split
+        heap: list[tuple[float, int]] = []
+        heapq.heappush(heap, (split[2], id_cnt))
+        id_cnt += 1
+
+        hojas: set[frozenset] = {comp_raiz}
+        hoja_a_split_id: dict[frozenset, int] = {comp_raiz: 0}
+
+        while len(hojas) < min(k, len(nodos)):
+            if not heap:
+                break
+
+            _, eid = heapq.heappop(heap)
+            if eid not in splits_info:
+                continue
+
+            izq, der, _ = splits_info.pop(eid)
+
+            # Identificar el componente padre (el que contiene izq U der)
+            padre = izq | der
+            if padre not in hojas:
+                continue  # ya fue dividido por otra rama del heap
+
+            hojas.discard(padre)
+            hojas.add(izq)
+            hojas.add(der)
+
+            for hijo in (izq, der):
+                if len(hijo) > 1:
+                    s = self._bipartir_componente(list(hijo), alcance_total, mecanismo_total)
+                    if s is not None:
+                        splits_info[id_cnt] = s
+                        heapq.heappush(heap, (s[2], id_cnt))
+                        id_cnt += 1
+
+        # Construir asignacion
+        nodo_a_grupo: dict[int, int] = {}
+        for grupo_idx, hoja in enumerate(hojas):
+            for nodo in hoja:
+                nodo_a_grupo[nodo] = grupo_idx
+
+        asig = tuple(nodo_a_grupo.get(n, 0) for n in nodos)
+        return self.canonicalizar(asig) if len(set(asig)) >= 2 else None
 
     def _semilla_desde_biparticion(
         self,
