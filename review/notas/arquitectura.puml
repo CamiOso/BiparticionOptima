@@ -1,0 +1,321 @@
+@startuml arquitectura_sistema_mip
+
+title Arquitectura del Sistema MIP-IIT\n(Partición de Mínima Pérdida de Información)
+
+skinparam packageStyle rectangle
+skinparam shadowing false
+skinparam linetype ortho
+skinparam ArrowColor #555555
+skinparam ClassBorderColor #555555
+skinparam ClassBackgroundColor #FAFAFA
+skinparam NoteBackgroundColor #FFFDE7
+skinparam NoteBorderColor #F9A825
+
+' ============================================================
+' CAPA: ENTRADA / PRESENTACIÓN
+' ============================================================
+package "Presentación" #E3F2FD {
+    class main <<entrypoint>> {
+        +main()
+    }
+    class Orquestador {
+        +ejecutar()
+    }
+    class GestorControlador {
+        +procesar_comando()
+    }
+}
+
+' ============================================================
+' CAPA: APLICACIÓN (Casos de Uso + Puertos)
+' ============================================================
+package "Aplicación" #E8F5E9 {
+    class BuscarParticionOptima <<caso de uso>> {
+        +ejecutar(entrada) : Solucion
+    }
+    class EstimarTPM <<caso de uso>> {
+        +ejecutar(estado) : TPM
+    }
+    interface IEstrategia <<puerto>> {
+        +aplicar_estrategia(...) : Solucion
+    }
+    interface IRepositorioTPM <<puerto>> {
+        +obtener(estado) : np.ndarray
+    }
+}
+
+' ============================================================
+' CAPA: DOMINIO / MODELOS NÚCLEO
+' ============================================================
+package "Dominio / Modelos" #FFF9C4 {
+    class Sistema {
+        +estado_inicial : NDArray
+        +ncubos : tuple[NCube]
+        +condicionar(indices) : Sistema
+        +substraer(alc, mec) : Sistema
+        +bipartir(alc, mec) : Sistema
+        +k_bipartir(nodos, asig) : Sistema
+        +k_bipartir_temporal(mec_grupos, alc_grupos) : Sistema
+        +distribucion_marginal() : NDArray
+    }
+    class NCube {
+        +indice : int
+        +dims : NDArray
+        +data : NDArray
+        +marginalizar(dims) : NCube
+        +condicionar(indices, estado) : NCube
+    }
+    class Solucion {
+        +estrategia : str
+        +perdida : float
+        +distribucion_subsistema : NDArray
+        +distribucion_particion : NDArray
+        +estado_inicial : str
+        +particion : str
+    }
+    class AppConfig {
+        +semilla_numpy : int
+        +metrica_emd : str
+        +pagina_red_muestra : str
+    }
+}
+
+' ============================================================
+' CAPA: ESTRATEGIAS (corazón del sistema)
+' ============================================================
+package "Estrategias" #FCE4EC {
+
+    abstract class SIA <<base>> {
+        +tpm : NDArray
+        +sia_subsistema : Sistema
+        +sia_dists_marginales : NDArray
+        +sia_preparar_subsistema(...)
+        +{abstract} aplicar_estrategia(...) : Solucion
+    }
+
+    ' --- Estrategias exactas ---
+    package "Exactas" #FFEBEE {
+        class FuerzaBruta {
+            +biparticiones exhaustivas
+        }
+        class Phi {
+            +PyPhi o heurística respaldo
+        }
+    }
+
+    ' --- Estrategias polinomiales / submodulares ---
+    package "Submodulares O(n³)" #FFF3E0 {
+        class QNodos {
+            +algoritmo_q() : Queyranne MAO
+            +_mao_multi_start()
+            +_sa_biparticion()
+            +_k_particion_arbol_contracciones()
+        }
+        class Geometric {
+            +hipercubo + candidatos Fiedler
+            +modos STRICT / REFINED
+        }
+        class Circuito {
+            +Laplaciano conductancias
+            +Laplaciano hipergrafo
+            +vector de Fiedler
+            +k-means espectral
+        }
+    }
+
+    ' --- Metaheurísticas ---
+    package "Metaheurísticas" #E8EAF6 {
+        class AlgoritmoGenetico {
+            +poblacion, generaciones
+            +cruce uniforme
+            +torneo binario
+        }
+        class REMCMC {
+            +n_replicas cadenas paralelas
+            +escalera geométrica de T
+            +swaps Metropolis entre replicas
+            +k=2: bipartir(subalc, submec)
+            +k>2: k_bipartir(nodos, asig)
+        }
+        class BeliefPropagation {
+            +modelo de Potts
+            +mensajes sum-product (LBP)
+            +amortiguación damping
+        }
+    }
+
+    ' --- Basadas en grafos ---
+    package "Basadas en grafos" #E0F7FA {
+        class Louvain {
+            +modularidad de grafo
+            +comunidades jerárquicas
+        }
+        class InformacionBottleneck {
+            +compresión I(X;T)
+            +restricción I(T;Y)
+        }
+        class ParticionILP {
+            +programación lineal entera
+            +restricciones de partición
+        }
+    }
+}
+
+' ============================================================
+' CAPA: BÚSQUEDA / BUSCADORES DE K-PARTICIÓN
+' ============================================================
+package "Buscadores K-Partición" #F3E5F5 {
+    abstract class BuscadorKParticion <<template method>> {
+        +buscar(k, semilla) : ResultadoKParticion
+        +{abstract} evaluar_asignacion(asig)
+        +{abstract} total_elementos()
+        +refinar_local()
+        +vecinos()
+    }
+    class BuscadorKRecocido {
+        +temp_inicial, temp_final
+        +factor_enfriamiento
+        +n_cadenas
+        +_recocido()
+        +_multi_recocido()
+    }
+    class BuscadorKDP {
+        +costos_subconjuntos
+        +DP O(3^n * k)
+        +_buscar_dp_sa()
+    }
+    class ResultadoKParticion <<dataclass>> {
+        +perdida : float
+        +distribucion : NDArray
+        +asignacion : tuple
+    }
+}
+
+' ============================================================
+' CAPA: INFRAESTRUCTURA
+' ============================================================
+package "Infraestructura" #EFEBE9 {
+    class Contenedor <<IoC>> {
+        +estrategia(nombre, tpm) : IEstrategia
+        +caso_uso_buscar_particion() : BuscarParticionOptima
+        +caso_uso_estimar_tpm() : EstimarTPM
+    }
+    class Gestor <<repositorio>> {
+        +obtener_tpm(estado) : NDArray
+    }
+    class SafeLogger <<observabilidad>> {
+        +info(), debug(), error()
+    }
+}
+
+' ============================================================
+' FUNCIONES COMPARTIDAS
+' ============================================================
+package "Funciones compartidas" #F9FBE7 {
+    class "iit.py" as iit <<utilidades>> {
+        +seleccionar_emd()
+        +reindexar()
+        +literales()
+    }
+    class "particiones.py" as particiones <<utilidades>> {
+        +biparticiones()
+        +k_particiones_asignacion()
+    }
+    class "grafo_info.py" as grafo_info <<utilidades>> {
+        +construir_afinidad()
+    }
+    class "formato.py" as formato <<utilidades>> {
+        +fmt_biparticion()
+        +fmt_k_particion_asignacion()
+    }
+}
+
+' ============================================================
+' RELACIONES
+' ============================================================
+
+' Presentación → Aplicación
+main --> Orquestador
+Orquestador --> GestorControlador
+GestorControlador --> Contenedor
+
+' Contenedor (IoC)
+Contenedor --> BuscarParticionOptima : crea
+Contenedor --> IEstrategia : instancia
+
+' Caso de uso → Puerto
+BuscarParticionOptima --> IEstrategia : usa
+BuscarParticionOptima --> SafeLogger
+EstimarTPM --> IRepositorioTPM
+Gestor ..|> IRepositorioTPM
+
+' Herencia de estrategias
+SIA ..|> IEstrategia
+FuerzaBruta --|> SIA
+Phi --|> SIA
+QNodos --|> SIA
+Geometric --|> SIA
+Circuito --|> SIA
+AlgoritmoGenetico --|> SIA
+REMCMC --|> SIA
+BeliefPropagation --|> SIA
+Louvain --|> SIA
+InformacionBottleneck --|> SIA
+ParticionILP --|> SIA
+
+' SIA → Dominio
+SIA --> Sistema : prepara subsistema
+SIA --> Solucion : retorna
+Sistema *-- NCube : contiene
+
+' Buscadores
+BuscadorKRecocido --|> BuscadorKParticion
+BuscadorKDP --|> BuscadorKRecocido
+BuscadorKParticion --> ResultadoKParticion : produce
+QNodos --> BuscadorKRecocido : hereda _BuscadorKQNodos
+
+' Funciones compartidas
+SIA ..> iit : usa EMD
+Circuito ..> grafo_info : construir_afinidad
+BeliefPropagation ..> grafo_info : construir_afinidad
+Louvain ..> grafo_info : construir_afinidad
+FuerzaBruta ..> particiones : biparticiones
+REMCMC ..> formato : fmt_biparticion
+Circuito ..> formato
+
+' Config
+AppConfig ..> SIA : inyectada (opcional)
+Contenedor --> AppConfig
+
+' ============================================================
+' NOTAS CLAVE
+' ============================================================
+
+note right of SIA
+  **Puerto SIA (Systematic Information Analysis)**
+  Base abstracta de todas las estrategias.
+  Prepara el subsistema condicionando y
+  sustraendo nodos antes de la búsqueda.
+end note
+
+note bottom of REMCMC
+  **k=2**: busca sobre (subalcance, submecanismo)
+  con bipartir() — mismo espacio que FuerzaBruta.
+  **k>2**: asignaciones con k_bipartir().
+  Swaps satisfacen balance detallado.
+end note
+
+note bottom of QNodos
+  Único algoritmo con garantía teórica O(n³)
+  para funciones submodulares (EMD bajo
+  condiciones markovianas).
+  SA post-MAO para funciones no submodulares.
+end note
+
+note right of Contenedor
+  **Composition Root** (Arquitectura Hexagonal)
+  Único punto donde se conectan puertos
+  y adaptadores concretos.
+end note
+
+@enduml

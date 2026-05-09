@@ -1747,3 +1747,160 @@ El test `test_qnodes_matches_sample_a_reference_case` fue actualizado: el valor 
 | `tests/test_strategy_q_nodes.py` | Corrige valor esperado (0.5→0.25) al óptimo real |
 | `review/benchmarks/todas_estrategias_resumen.csv` | Actualizado con nuevos resultados |
 | `review/benchmarks/n_grande_circuito_detalle.csv` | Actualizado con nuevos resultados |
+
+---
+
+## Parte 19 — REMCMC, diagrama de arquitectura y exploración de métodos variacionales
+
+**Fecha:** 2026-05-09
+
+### 19.1 Nueva estrategia: REMCMC (Replica Exchange MCMC / Parallel Tempering)
+
+Se implementó la estrategia `REMCMC` en `src/estrategias/remcmc.py`, basada en el algoritmo de Hidaka y Oizumi (2018). Es la primera estrategia del proyecto que usa **Parallel Tempering**: múltiples cadenas Markov corriendo simultáneamente a distintas temperaturas fijas, intercambiando estados periódicamente.
+
+#### Motivación
+
+El recocido simulado (`BuscadorKRecocido`) baja la temperatura progresivamente, lo que limita su capacidad de escapar mínimos locales en etapas avanzadas. REMCMC mantiene cadenas calientes (alta exploración) durante todo el recorrido, y transfiere soluciones prometedoras hacia la cadena fría mediante swaps que satisfacen balance detallado.
+
+Es especialmente útil para funciones de pérdida **no submodulares**, donde Queyranne no garantiza optimalidad.
+
+#### Estructura del algoritmo
+
+```
+Parámetros: n_replicas=6, temp_min=0.001, temp_max=2.0,
+            pasos_por_ronda=40, n_rondas=60
+
+1. Escalera geométrica: T_i = temp_min * (temp_max/temp_min)^(i/(R-1))
+   → T_0 (fría, explotación) ... T_{R-1} (caliente, exploración)
+
+2. Por cada ronda:
+   a) Cada réplica i hace pasos_por_ronda pasos MH a temperatura T_i fija
+   b) Intentos de swap entre réplicas adyacentes (pares alternados):
+      A = exp((φ_i − φ_j) · (1/T_i − 1/T_j))
+      Si A ≥ 1 → siempre acepta (cadena caliente encontró algo mejor)
+      Si A < 1 → acepta con probabilidad A
+
+3. Rastrear mejor solución global en todas las rondas y réplicas
+```
+
+#### Semántica de bipartición: bug encontrado y corregido
+
+La primera versión usaba `k_bipartir` para todos los casos, igual que `AlgoritmoGenetico` y `BeliefPropagation`. Esto produce brechas enormes vs. FuerzaBruta (>1000%) porque `k_bipartir` tiene semántica distinta a la MIP-IIT.
+
+La diferencia es fundamental:
+
+| Método | Operación | Semántica |
+|---|---|---|
+| `bipartir(subalcance, submecanismo)` | Corta conexiones causa-efecto específicas | MIP-IIT correcta |
+| `k_bipartir(nodos, asignacion)` | Agrupa nodos y corta conexiones intergrupales | Problema distinto |
+
+**FuerzaBruta** y **QNodos** usan `bipartir` → encuentran el óptimo IIT correcto.  
+**GA** y **BP** usan `k_bipartir` → resuelven un problema diferente (k-clustering de nodos).
+
+REMCMC fue corregido para usar `bipartir` en k=2, con el espacio de búsqueda `(alc_mask, mec_mask) ∈ {0,1}^n × {0,1}^n`, excluyendo los dos estados triviales que colapsan la pérdida a cero:
+
+- `(vacío, vacío)`: `bipartir([], [])` deja el sistema intacto → EMD = 0
+- `(todo, todo)`: `bipartir(all, all)` deja el sistema intacto → EMD = 0
+
+Estos son exactamente los dos casos que `biparticiones()` ya excluye en FuerzaBruta.
+
+#### Resultados
+
+| n | k | FB (referencia) | REMCMC | Brecha |
+|---|---|---|---|---|
+| 3 | 2 | exacto | exacto | 0.00% |
+| 4 | 2 | exacto | exacto | 0.00% |
+| 5 | 2 | exacto | exacto | 0.00% |
+
+**15/15 exacto** vs. FuerzaBruta para k=2 en n=3,4,5. Para k>2 usa `k_bipartir` con la misma semántica que GA y Circuito.
+
+#### Archivos modificados
+
+| Archivo | Cambio |
+|---|---|
+| `src/estrategias/remcmc.py` | Nuevo — implementación completa de REMCMC |
+| `src/constantes/models.py` | `REMCMC_LABEL = "REMCMC"` |
+| `src/infraestructura/estrategias/__init__.py` | Exporta `REMCMC` |
+| `src/contenedor.py` | Registra `"remcmc"`, `"replica_exchange"`, `"parallel_tempering"` |
+
+---
+
+### 19.2 Diagrama de arquitectura del sistema (PlantUML)
+
+Se creó el diagrama completo en `review/notas/arquitectura.puml`. Captura la arquitectura hexagonal del sistema con todas las capas y relaciones.
+
+#### Capas del sistema
+
+```
+┌─────────────────────────────────────────────────────┐
+│  Presentación       main.py, Orquestador, Gestor    │
+├─────────────────────────────────────────────────────┤
+│  Aplicación         BuscarParticionOptima,          │
+│                     EstimarTPM, IEstrategia (puerto)│
+├─────────────────────────────────────────────────────┤
+│  Dominio / Modelos  Sistema, NCube, Solucion,       │
+│                     AppConfig                       │
+├──────────────────────────────┬──────────────────────┤
+│  Estrategias                 │  Buscadores          │
+│  ├─ Exactas                  │  BuscadorKParticion  │
+│  │   FuerzaBruta, Phi        │  BuscadorKRecocido   │
+│  ├─ Submodulares O(n³)       │  BuscadorKDP         │
+│  │   QNodos, Geometric,      │                      │
+│  │   Circuito                │                      │
+│  ├─ Metaheurísticas          │                      │
+│  │   AlgoritmoGenetico,      │                      │
+│  │   REMCMC,                 │                      │
+│  │   BeliefPropagation       │                      │
+│  └─ Basadas en grafos        │                      │
+│      Louvain, IB, ILP        │                      │
+├──────────────────────────────┴──────────────────────┤
+│  Infraestructura    Contenedor (IoC), Gestor,       │
+│                     SafeLogger                      │
+├─────────────────────────────────────────────────────┤
+│  Funciones compartidas                              │
+│  iit.py, particiones.py, grafo_info.py, formato.py  │
+└─────────────────────────────────────────────────────┘
+```
+
+#### Inventario completo de estrategias (11 en total)
+
+| Estrategia | Tipo | Semántica k=2 | Complejidad |
+|---|---|---|---|
+| `FuerzaBruta` | Exacta | `bipartir` exhaustivo | O(2^(2n)) |
+| `Phi` | Exacta (PyPhi) | PyPhi / heurística | O(n·5·3^n) |
+| `QNodos` | Submodular | `bipartir` vía Queyranne+SA | O(n³) |
+| `Geometric` | Hipercubo+Fiedler | `bipartir` vía candidatos | O(n·2^n) |
+| `Circuito` | Espectral | `bipartir` vía Fiedler | O(n³) |
+| `AlgoritmoGenetico` | Metaheurística | `k_bipartir` | O(gen·pop·eval) |
+| `REMCMC` | Metaheurística | `bipartir` (k=2) / `k_bipartir` (k>2) | O(R·rondas·pasos·eval) |
+| `BeliefPropagation` | Metaheurística | `k_bipartir` | O(iter·aristas·k²) |
+| `Louvain` | Grafos | `k_bipartir` | O(n·log n) |
+| `InformacionBottleneck` | Grafos | `k_bipartir` | O(iter·n·k) |
+| `ParticionILP` | ILP | `k_bipartir` | O(exp) en peor caso |
+
+**Nota:** Las estrategias que usan `k_bipartir` para k=2 resuelven un problema de k-clustering de nodos, no estrictamente la MIP-IIT. Solo FuerzaBruta, Phi, QNodos, Geometric, Circuito y REMCMC (k=2) computan la bipartición IIT correcta.
+
+---
+
+### 19.3 Exploración de métodos variacionales (FEM-inspirado)
+
+Se analizó si el Método de Elementos Finitos (FEM) podría aplicarse al problema MIP. La conclusión es que FEM clásico no aplica directamente (el dominio ya es discreto, no hay PDE), pero el **espíritu local→global** de FEM ya está presente en el proyecto:
+
+| Idea FEM | Análogo en el proyecto |
+|---|---|
+| Matriz de rigidez K | Laplaciano de conductancias / hipergrafo (Circuito) |
+| Funciones base locales | Eigenvectores del Laplaciano |
+| Ensamblaje local→global | Árbol de contracciones de Queyranne |
+| Principio variacional | Submodularidad de EMD |
+
+La dirección más prometedora identificada es una **estrategia de partición variacional** basada en el Laplaciano generalizado `Lv = λDv` (problema de Rayleigh-Ritz sobre el grafo bipartito futuro-pasado), donde D es la matriz de distribuciones marginales. Esta estrategia se planificó pero no se implementó en esta sesión; queda como trabajo futuro bajo el nombre `ParticionVariacional`.
+
+---
+
+### 19.4 Tabla cronológica actualizada
+
+| Fecha | Investigación | Cómo se implementó |
+|---|---|---|
+| 2026-05-09 | REMCMC (Parallel Tempering) para MIP-IIT | `src/estrategias/remcmc.py`; corrección semántica bipartir vs k_bipartir para k=2 |
+| 2026-05-09 | Diagrama de arquitectura completa del sistema | `review/notas/arquitectura.puml` (PlantUML) |
+| 2026-05-09 | Análisis de aplicabilidad de FEM al problema MIP | Identificada dirección futura: ParticionVariacional con Laplaciano generalizado |
