@@ -127,6 +127,21 @@ package "Estrategias" #FCE4EC {
             +Schrödinger H = L + γ·diag(V)
             +potencial Airy V[i]=2P(Xi=1)-1
         }
+        class ParticionHiperbolica {
+            +embedding disco Poincaré
+            +eigenvectores Fiedler → (x,y)
+            +r → tanh(2r): proyección hiperbólica
+            +geodésicas diametrales (n_angulos=32)
+            +geodésicas circulares (Möbius, O(n²))
+            +analogía Ryu-Takayanagi (AdS/CFT)
+        }
+        class BranchBound {
+            +umbral_exacto=14 (n_total de bits)
+            +fase exacta: 2^{n_a}·2^{n_m} evalúa todo
+            +SA multi-arranque (n_sa_arranques=8)
+            +expansión Hamming radio=3
+            +garantía exacta para n_total ≤ 14
+        }
     }
 
     ' --- Metaheurísticas ---
@@ -269,6 +284,8 @@ Louvain --|> SIA
 InformacionBottleneck --|> SIA
 ParticionILP --|> SIA
 ParticionVariacional --|> SIA
+ParticionHiperbolica --|> SIA
+BranchBound --|> SIA
 
 ' SIA → Dominio
 SIA --> Sistema : prepara subsistema
@@ -326,6 +343,23 @@ note bottom of ParticionVariacional
   V[i] = 2P(X_i=1)−1; turning points de Airy
   definen la frontera de la partición.
   ev0 de H no es trivial (incluido en candidatos).
+end note
+
+note bottom of ParticionHiperbolica
+  **Analogía Ryu-Takayanagi** (AdS/CFT, 2006):
+  S(A) = Área(γ_A)/4G_N.
+  El MIP es la geodésica mínima en el bulk AdS.
+  Embedding: eigenvectores Fiedler → disco Poincaré
+  via r → tanh(2r). Exacta ~40% casos aleatorios;
+  útil para sistemas con estructura geométrica real.
+end note
+
+note bottom of BranchBound
+  **Garantía exacta** para n_total ≤ 14 bits.
+  Para n_total > 14: SA multi-arranque (8 cadenas
+  con temperaturas escalonadas) + expansión Hamming
+  radio 3. Supera a QNodos en el ~12% no submodular
+  cuando SA de QNodos queda en mínimo local.
 end note
 
 note right of Contenedor

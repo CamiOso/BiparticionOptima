@@ -29,6 +29,7 @@ from src.estrategias.belief_propagation import BeliefPropagation
 from src.estrategias.remcmc import REMCMC
 from src.estrategias.variacional import ParticionVariacional
 from src.estrategias.branch_bound import BranchBound
+from src.estrategias.hiperbolica import ParticionHiperbolica
 
 __all__ = [
     "FuerzaBruta",
@@ -44,4 +45,5 @@ __all__ = [
     "REMCMC",
     "ParticionVariacional",
     "BranchBound",
+    "ParticionHiperbolica",
 ]

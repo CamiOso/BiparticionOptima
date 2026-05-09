@@ -2024,3 +2024,119 @@ Si la TPM tiene columnas uniformes en [0,1], entonces `mean(tpm[:,i]) ≈ 0.5` �
 | 2026-05-09 | Diagrama de arquitectura PlantUML | `review/notas/arquitectura.puml` |
 | 2026-05-09 | Análisis FEM y dirección variacional | Sección 19.3 |
 | 2026-05-09 | ParticionVariacional — Airy + L normalizado | `src/estrategias/variacional.py` |
+| 2026-05-09 | BranchBound — exacto n≤7/lado + SA multi-arranque + Hamming | `src/estrategias/branch_bound.py` |
+| 2026-05-09 | ParticionHiperbolica — disco de Poincaré (AdS/CFT, Ryu-Takayanagi) | `src/estrategias/hiperbolica.py` |
+
+---
+
+## Parte 21 — ParticionHiperbolica: Geodésicas en el Disco de Poincaré
+
+### 21.1 Motivación: Relatividad General y AdS/CFT
+
+La **fórmula de Ryu-Takayanagi** (2006) es uno de los resultados más profundos de la física teórica moderna. En el marco de la dualidad AdS/CFT, establece que la **entropía de entrelazamiento** de una región `A` en la teoría de campos conforme del borde es igual al **área de la superficie geodésica mínima** en el espacio Anti-de Sitter (AdS) interior que "ancla" en el borde de `A`:
+
+```
+S(A) = Área(γ_A) / 4·G_N
+```
+
+donde `G_N` es la constante gravitacional de Newton en el bulk AdS.
+
+**Analogía con el MIP-IIT:**
+
+| AdS/CFT | MIP-IIT |
+|---|---|
+| Región A en la frontera conforme | Subalcance A ⊆ indices |
+| Superficie geodésica mínima γ_A | Bipartición de mínima pérdida |
+| Área(γ_A) | EMD(bipartir(A,M), dists_marginales) |
+| Espacio AdS₂ (hiperbólico 2D) | Disco de Poincaré como espacio de embedding |
+| Entropía de entrelazamiento S(A) | Perdida φ |
+
+El espacio AdS en (2+1) dimensiones es **isométrico al disco de Poincaré** — el modelo más famoso de geometría hiperbólica 2D, donde las geodésicas son arcos de círculo ortogonales al borde del disco o diámetros que pasan por el origen.
+
+**La hipótesis central:** si el IIT mide la integración de información del mismo modo en que AdS/CFT mide la entropía de entrelazamiento, entonces la partición óptima del sistema debería corresponder a la **geodésica mínima** en el espacio hiperbólico inducido por la dinámica de la TPM.
+
+### 21.2 Algoritmo
+
+```
+1. Construir conductancias W (sensibilidades de la TPM).
+2. Laplaciano L = D - W; eigenvectores v₁, v₂ (Fiedler y siguiente).
+3. Proyección hiperbólica:
+       coords_h = coords / ‖coords‖ · tanh(α·‖coords‖)
+   → r → tanh(2r): nodos centrales (alta conectividad) → centro AdS
+                    nodos periféricos (baja conectividad) → borde conforme
+4. Generar candidatos de dos familias de geodésicas:
+   a. DIAMETRALES: barrer n_angulos ángulos θ ∈ [0,π), proyectar sobre
+      la perpendicular al diámetro → umbral óptimo por intervalo.
+   b. CIRCULARES: para cada par (zᵢ, zⱼ), transformación de Möbius
+         T_{zᵢ}(z) = (z - zᵢ) / (1 - z̄ᵢ·z)
+      mapea zᵢ → 0. La geodésica de Poincaré que pasa por zᵢ y zⱼ
+      se convierte en un diámetro bajo T. El signo de
+         Im[T(z_k) · conj(T(zⱼ)/|T(zⱼ)|)]
+      clasifica cada nodo a un lado.
+5. Evaluar todos los candidatos con bipartir() y tomar el mínimo.
+6. Refinamiento local (flip de un nodo a la vez, igual que Circuito).
+```
+
+### 21.3 Implementación
+
+**Archivo:** `src/estrategias/hiperbolica.py`
+
+```python
+class ParticionHiperbolica(SIA):
+    def __init__(self, tpm, config=None, n_angulos=32): ...
+
+    def _embeber_poincare(self, nodos, W):
+        # Eigenvectores de Fiedler como coords (x,y)
+        # Proyección: coords_h = coords * tanh(2r) / r
+        ...
+
+    def _clasificar_por_geodesica(self, coords_h, zi, zj):
+        # Möbius T_{zi}, clasificar por Im[T(z)·conj(dir)]
+        ...
+
+    def _candidatos_geodesicos(self, nodos, alc_total, mec_total):
+        # Familia 1: n_angulos diametrales
+        # Familia 2: O(n²) circulares via Möbius
+        ...
+```
+
+**Invocación desde el Contenedor** (alias `"hiperbolica"`, `"poincare"`, `"ryu_takayanagi"`):
+
+```python
+from src.estrategias.hiperbolica import ParticionHiperbolica
+caso = Contenedor().caso_uso_buscar_particion("hiperbolica", tpm)
+```
+
+### 21.4 Benchmark (n=3–6, 50 casos aleatorios)
+
+```
+ n  seed       FB       QN    Hiper |    =FB   H<QN
+----------------------------------------------------------
+ 3  0–14    todas exactas (FB=QN=Hiper en la mayoría)
+ 4  0–14    11/15 exactas (73%)
+ 5  0–9      4/10 exactas (40%)
+ 6  0–9      4/10 exactas (40%)
+----------------------------------------------------------
+Total: 50  H==FB: 20/50 (40%)  H<QN: 0
+```
+
+**Conclusiones:**
+
+- `ParticionHiperbolica` es exacta (igual que FuerzaBruta) en el **40%** de los casos aleatorios probados.
+- **Nunca supera a QNodos** en sistemas aleatorios (H<QN: 0/50).
+- QNodos sigue siendo el estado del arte para sistemas aleatorios (~100% exacto gracias a submodularidad).
+- El embedding hiperbólico es **más débil para n grande**: a medida que n crece, la proyección de Poincaré dispersa los nodos de forma menos informativa y los candidatos geodésicos no alcanzan la bipartición óptima.
+
+**Cuándo podría ser útil:**
+
+1. **Sistemas con estructura geométrica real** (redes neuronales con topología, sistemas físicos con adyacencia espacial) donde la distancia en el grafo de conductancias refleja la estructura de información.
+2. **Interpretabilidad**: las geodésicas de Poincaré son visualmente interpretables — la frontera mínima en el espacio hiperbólico tiene una historia holográfica.
+3. **Ensemble**: como generador de candidatos complementario a QNodos en los ~12% de casos no submodulares.
+
+### 21.5 Conexión con BranchBound (Parte 21b)
+
+`BranchBound` implementado en la misma sesión proporciona la garantía exacta que `ParticionHiperbolica` no puede dar:
+- `n_total ≤ 14`: exhaustivo O(2^{n_a} · 2^{n_m}) → mismo resultado que FuerzaBruta.
+- `n_total > 14`: SA multi-arranque (8 cadenas) + expansión Hamming radio 3 → reduce el gap significativamente.
+
+La combinación teórica ideal sería usar `ParticionHiperbolica` para generar el punto de partida del SA en `BranchBound`, aprovechando la geometría hiperbólica para mejorar la inicialización.

@@ -119,10 +119,14 @@ class Contenedor:
             from src.estrategias.branch_bound import BranchBound
             return BranchBound(tpm, config=self._config)
 
+        if nombre_lower in {"hiperbolica", "poincare", "ryu_takayanagi", "particion_hiperbolica"}:
+            from src.estrategias.hiperbolica import ParticionHiperbolica
+            return ParticionHiperbolica(tpm, config=self._config)
+
         raise ValueError(
             f"Estrategia desconocida: '{nombre}'. "
             "Opciones: fuerza_bruta, phi, qnodos, geometric, circuito, "
-            "ib, louvain, genetico, ilp, bp, remcmc, variacional, bb."
+            "ib, louvain, genetico, ilp, bp, remcmc, variacional, bb, hiperbolica."
         )
 
     # ── Fábricas de casos de uso ─────────────────────────────────────────────
