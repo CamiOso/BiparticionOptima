@@ -110,10 +110,15 @@ class Contenedor:
             from src.infraestructura.estrategias import REMCMC
             return REMCMC(tpm, config=self._config)
 
+        if nombre_lower in {"variacional", "airy", "biharmonico", "particion_variacional"}:
+            from src.estrategias.variacional import ParticionVariacional
+            modo = "biharmonico" if nombre_lower in {"biharmonico", "airy"} else "laplaciano"
+            return ParticionVariacional(tpm, config=self._config, modo=modo)
+
         raise ValueError(
             f"Estrategia desconocida: '{nombre}'. "
             "Opciones: fuerza_bruta, phi, qnodos, geometric, circuito, "
-            "ib, louvain, genetico, ilp, bp, remcmc."
+            "ib, louvain, genetico, ilp, bp, remcmc, variacional."
         )
 
     # ── Fábricas de casos de uso ─────────────────────────────────────────────

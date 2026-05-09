@@ -1893,7 +1893,7 @@ Se analizó si el Método de Elementos Finitos (FEM) podría aplicarse al proble
 | Ensamblaje local→global | Árbol de contracciones de Queyranne |
 | Principio variacional | Submodularidad de EMD |
 
-La dirección más prometedora identificada es una **estrategia de partición variacional** basada en el Laplaciano generalizado `Lv = λDv` (problema de Rayleigh-Ritz sobre el grafo bipartito futuro-pasado), donde D es la matriz de distribuciones marginales. Esta estrategia se planificó pero no se implementó en esta sesión; queda como trabajo futuro bajo el nombre `ParticionVariacional`.
+La dirección más prometedora identificada es una **estrategia de partición variacional** basada en el Laplaciano generalizado y el operador de Schrödinger con potencial Airy. Esta estrategia fue implementada en la Parte 20 bajo el nombre `ParticionVariacional` en `src/estrategias/variacional.py`.
 
 ---
 
@@ -1904,3 +1904,123 @@ La dirección más prometedora identificada es una **estrategia de partición va
 | 2026-05-09 | REMCMC (Parallel Tempering) para MIP-IIT | `src/estrategias/remcmc.py`; corrección semántica bipartir vs k_bipartir para k=2 |
 | 2026-05-09 | Diagrama de arquitectura completa del sistema | `review/notas/arquitectura.puml` (PlantUML) |
 | 2026-05-09 | Análisis de aplicabilidad de FEM al problema MIP | Identificada dirección futura: ParticionVariacional con Laplaciano generalizado |
+| 2026-05-09 | ParticionVariacional con operador de Airy implementada | `src/estrategias/variacional.py` (Parte 20) |
+
+---
+
+## Parte 20 — ParticionVariacional: Laplaciano Normalizado y Operador de Airy (2026-05-09)
+
+### 20.1 Motivación: funciones de Airy en partición espectral
+
+La consulta de esta sesión fue: *"¿no se podrá usar Airy?"*
+
+Las **funciones de Airy** `Ai(x)` son soluciones de la ecuación diferencial `y'' = xy`. Describen ondas cuánticas cerca de puntos de retorno (turning points). Su relevancia para MIP viene de la analogía con el operador de Schrödinger discreto:
+
+```
+H = L + γ·diag(V)
+```
+
+donde `L` es el Laplaciano de conductancias del grafo y `V[i]` es el **potencial Airy** del nodo `i`.
+
+El potencial codifica la actividad marginal del nodo:
+
+```
+V[i] = 2·P(X_i = 1) − 1 ∈ [−1, 1]
+```
+
+| Valor de V[i] | Interpretación Airy | Ejemplo IIT |
+|---|---|---|
+| V ≈ −1 | Zona oscilante | Nodo casi siempre inactivo |
+| V =   0 | **Punto de retorno** | Nodo en equilibrio P=0.5 |
+| V ≈ +1 | Zona evanescente | Nodo casi siempre activo |
+
+Los **ceros del vector de Fiedler de H** corresponden a los puntos de retorno de la función de Airy continua local — exactamente donde pasa la frontera de la partición.
+
+---
+
+### 20.2 Dos operadores implementados
+
+#### Modo `"laplaciano"` — Laplaciano normalizado
+
+```
+L_n = D^{-½} · L · D^{-½}
+```
+
+Minimiza el **corte normalizado** (Shi & Malik, 2000):
+
+```
+Ncut(A,B) = cut(A,B)/assoc(A,V) + cut(A,B)/assoc(B,V)
+```
+
+La normalización por los grados hace que el Fiedler favorezca particiones balanceadas en volumen, no solo en aristas cortadas.
+
+#### Modo `"biharmonico"` — Operador de Schrödinger (Airy)
+
+```
+H = L + γ · diag(V)
+```
+
+A diferencia de `L`, el operador `H` **no es semidefinido positivo** cuando hay nodos con `V[i] < 0` (nodos inactivos). Esto genera eigenvalores negativos cuyo eigenvector correspondiente lleva la información de la zona oscilante — la región donde la función de Airy oscila antes del turning point.
+
+**Corrección clave:** en modo `"biharmonico"` el eigenvector `ev0` (eigenvalor más negativo) NO es trivial (no es vector constante), a diferencia del Laplaciano donde `ev0 = constante` y se descarta. Por esto, `ParticionVariacional` incluye `ev0` como candidato en modo biarmónico.
+
+---
+
+### 20.3 Implementación
+
+**Archivo:** `src/estrategias/variacional.py`
+
+```python
+class ParticionVariacional(SIA):
+    def __init__(self, tpm, config=None,
+                 modo="biharmonico", gamma=1.0): ...
+
+    def _operador(self, W, nodos):
+        d = W.sum(axis=1)
+        L = diag(d) - W
+        if modo == "laplaciano":
+            D_inv_sqrt = diag(1/sqrt(d_safe))
+            return D_inv_sqrt @ L @ D_inv_sqrt
+        # biharmonico
+        V = self._potencial_airy(nodos)
+        return L + gamma * diag(V)
+
+    def _potencial_airy(self, nodos):
+        # V[i] = 2·mean(tpm[:,i]) - 1
+```
+
+**Modos de invocación desde el Contenedor:**
+
+| Alias | Modo |
+|---|---|
+| `"variacional"` | `"laplaciano"` |
+| `"airy"` | `"biharmonico"` |
+| `"biharmonico"` | `"biharmonico"` |
+| `"particion_variacional"` | `"laplaciano"` |
+
+---
+
+### 20.4 Comportamiento observado
+
+Los candidatos generados por ambos operadores **difieren en número** pero convergen al mismo óptimo local después del refinamiento para n≤4 (espacio de biparticiones pequeño). Para n=6 con TPM biased:
+
+```
+Potencial V = [-0.90, -0.90, -0.03, +0.06, +0.90, +0.90]
+Candidatos biharmonico = 30   laplaciano = 36
+```
+
+Los operadores son distintos y proponen cortes distintos; la convergencia al mismo resultado refleja que el refinamiento local los lleva al mismo mínimo — no que sean equivalentes.
+
+**Por qué coinciden en TPMs uniformes aleatorias:**  
+Si la TPM tiene columnas uniformes en [0,1], entonces `mean(tpm[:,i]) ≈ 0.5` → `V[i] ≈ 0` → `H ≈ L`. El potencial Airy es relevante en sistemas estructurados con asimetría de actividad.
+
+---
+
+### 20.5 Tabla cronológica actualizada
+
+| Fecha | Investigación | Cómo se implementó |
+|---|---|---|
+| 2026-05-09 | REMCMC (Parallel Tempering) para MIP-IIT | `src/estrategias/remcmc.py` |
+| 2026-05-09 | Diagrama de arquitectura PlantUML | `review/notas/arquitectura.puml` |
+| 2026-05-09 | Análisis FEM y dirección variacional | Sección 19.3 |
+| 2026-05-09 | ParticionVariacional — Airy + L normalizado | `src/estrategias/variacional.py` |

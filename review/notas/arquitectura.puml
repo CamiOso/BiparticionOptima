@@ -121,6 +121,12 @@ package "Estrategias" #FCE4EC {
             +vector de Fiedler
             +k-means espectral
         }
+        class ParticionVariacional {
+            +modo: laplaciano | biharmonico
+            +Laplaciano normalizado D^{-½}LD^{-½}
+            +Schrödinger H = L + γ·diag(V)
+            +potencial Airy V[i]=2P(Xi=1)-1
+        }
     }
 
     ' --- Metaheurísticas ---
@@ -262,6 +268,7 @@ BeliefPropagation --|> SIA
 Louvain --|> SIA
 InformacionBottleneck --|> SIA
 ParticionILP --|> SIA
+ParticionVariacional --|> SIA
 
 ' SIA → Dominio
 SIA --> Sistema : prepara subsistema
@@ -310,6 +317,15 @@ note bottom of QNodos
   para funciones submodulares (EMD bajo
   condiciones markovianas).
   SA post-MAO para funciones no submodulares.
+end note
+
+note bottom of ParticionVariacional
+  **modo="laplaciano"**: L_n = D^{-½}LD^{-½}
+  minimiza corte normalizado (Shi & Malik).
+  **modo="biharmonico" (Airy)**: H = L + γV
+  V[i] = 2P(X_i=1)−1; turning points de Airy
+  definen la frontera de la partición.
+  ev0 de H no es trivial (incluido en candidatos).
 end note
 
 note right of Contenedor

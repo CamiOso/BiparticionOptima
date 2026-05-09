@@ -27,6 +27,7 @@ from src.estrategias.genetico import AlgoritmoGenetico
 from src.estrategias.particion_ilp import ParticionILP
 from src.estrategias.belief_propagation import BeliefPropagation
 from src.estrategias.remcmc import REMCMC
+from src.estrategias.variacional import ParticionVariacional
 
 __all__ = [
     "FuerzaBruta",
@@ -40,4 +41,5 @@ __all__ = [
     "ParticionILP",
     "BeliefPropagation",
     "REMCMC",
+    "ParticionVariacional",
 ]
