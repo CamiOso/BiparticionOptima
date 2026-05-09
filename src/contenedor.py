@@ -106,10 +106,14 @@ class Contenedor:
             from src.infraestructura.estrategias import BeliefPropagation
             return BeliefPropagation(tpm, config=self._config)
 
+        if nombre_lower in {"remcmc", "replica_exchange", "parallel_tempering"}:
+            from src.infraestructura.estrategias import REMCMC
+            return REMCMC(tpm, config=self._config)
+
         raise ValueError(
             f"Estrategia desconocida: '{nombre}'. "
             "Opciones: fuerza_bruta, phi, qnodos, geometric, circuito, "
-            "ib, louvain, genetico, ilp, bp."
+            "ib, louvain, genetico, ilp, bp, remcmc."
         )
 
     # ── Fábricas de casos de uso ─────────────────────────────────────────────

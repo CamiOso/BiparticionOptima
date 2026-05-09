@@ -26,6 +26,7 @@ from src.estrategias.louvain import Louvain
 from src.estrategias.genetico import AlgoritmoGenetico
 from src.estrategias.particion_ilp import ParticionILP
 from src.estrategias.belief_propagation import BeliefPropagation
+from src.estrategias.remcmc import REMCMC
 
 __all__ = [
     "FuerzaBruta",
@@ -38,4 +39,5 @@ __all__ = [
     "AlgoritmoGenetico",
     "ParticionILP",
     "BeliefPropagation",
+    "REMCMC",
 ]
