@@ -1446,3 +1446,72 @@ source .venv/bin/activate
 PYTHONPATH=. python review/benchmarks/benchmark_sa_n_grande.py
 PYTHONPATH=. python review/benchmarks/benchmark_todas_estrategias.py
 ```
+
+---
+
+## Parte 16 — Validación de métricas estructurales como proxy del EMD
+
+### Motivación
+
+El benchmark de la estrategia Circuito (Parte 15) mostró que la correlación de Spearman entre la métrica de *circuitos rotos* y el EMD era ρ ≈ 0.03 — prácticamente nula. Eso plantea una pregunta más amplia: ¿existe alguna propiedad estructural del grafo causal que sí correlacione con el EMD?
+
+Si existiera tal propiedad, se podría usar como función objetivo subrogada para guiar la búsqueda de la MIP sin calcular el EMD completo (que requiere resolver un problema de transporte óptimo).
+
+### Métricas evaluadas
+
+Para cada bipartición (A|B) del sistema se calcularon cuatro métricas estructurales:
+
+| Métrica | Definición |
+|---|---|
+| Peso de corte | Σ W[i→j] + W[j→i] para (i∈A, j∈B) |
+| Corte balanceado | Peso_corte / (\|A\| × \|B\|) |
+| Diferencia de entropías | \|H(X_A) − H(X_B)\| en distribución marginal |
+| Circuitos rotos | Suma de fuerzas de circuitos que cruzan la partición |
+
+Cada métrica se comparó contra el EMD real de esa bipartición usando correlación de Spearman. Se analizaron 20 sistemas aleatorios (10 con n=4 y 10 con n=5), evaluando todas las biparticiones posibles de cada sistema.
+
+### Resultados
+
+```
+=== Promedio de correlación de Spearman ===
+Métrica                    Promedio       Min       Max    ρ>0
+Peso corte                  +0.0231   -0.5278   +0.5980   11/20
+Corte balanceado            -0.0708   -0.6698   +0.4490    8/20
+Dif. entropías              -0.0356   -0.7143   +0.5714    9/20
+Circ. rotos                 +0.0281   -0.4082   +0.5916   12/20
+```
+
+### Interpretación
+
+**Ninguna métrica estructural correlaciona consistentemente con el EMD.** Los promedios de |ρ| están todos por debajo de 0.08, y para cada métrica la mitad de los sistemas tienen correlación positiva y la otra mitad negativa.
+
+Esto no es un artefacto del tamaño de la muestra. Es un resultado fundamentado en la naturaleza del EMD:
+
+- El EMD entre la distribución del sistema completo y la distribución de la bipartición depende de la *magnitud* de las probabilidades conjuntas, no solo de la topología del grafo.
+- Dos biparticiones con el mismo peso de corte pueden tener EMDs completamente distintos si las distribuciones marginales difieren.
+- La información mutua aproximada también resulta trivialmente cero bajo la suposición de independencia entre grupos (H(A,B) ≈ H(A) + H(B)).
+
+### Implicación para el diseño de estrategias
+
+La búsqueda de la MIP no puede reemplazar el cálculo del EMD con una heurística puramente estructural en sistemas aleatorios generales. Esto explica por qué estrategias como Louvain (modularidad) o InfoBottleneck (KL) muestran brechas tan grandes respecto al óptimo: optimizan funciones que no están correlacionadas con φ.
+
+Las estrategias que sí funcionan (Geometric, QNodos) tienen en común que evalúan el EMD real en algún punto del proceso de búsqueda, y usan estructuras algebraicas (Laplaciano espectral, MAO submodular) solo para inicializar o guiar esa búsqueda, no para reemplazarla.
+
+### Archivos generados
+
+| Archivo | Contenido |
+|---|---|
+| `review/benchmarks/benchmark_metrica_circuitos.py` | Validación: circuitos rotos vs EMD (ρ ≈ 0.03) |
+| `review/benchmarks/metrica_circuitos_vs_emd.csv` | Datos por sistema del benchmark de circuitos |
+| `review/benchmarks/benchmark_correlacion_estructural.py` | Validación: 4 métricas estructurales vs EMD |
+| `review/benchmarks/correlacion_estructural_vs_emd.csv` | Datos por sistema del benchmark estructural |
+
+Para reproducir:
+
+```bash
+source .venv/bin/activate
+PYTHONPATH=. python review/benchmarks/benchmark_metrica_circuitos.py
+PYTHONPATH=. python review/benchmarks/benchmark_correlacion_estructural.py
+```
+
+---
