@@ -60,8 +60,19 @@ recursiva con memoización DP sobre `algoritmo_q` como warm-start + recocido sim
 | AlgoritmoGenetico      | Metaheurística evolutiva: torneo + cruce uniforme   | O(gen·pop·eval)       |
 | ParticionILP           | Relajación LP del k-cut mínimo (solver HiGHS)       | O((n²k)³) → práctico |
 | BeliefPropagation      | Loopy Belief Propagation con modelo de Potts        | O(iter·|E|·k²)        |
+| REMCMC                 | Replica Exchange MCMC (Parallel Tempering)          | O(replicas·pasos)     |
 
 Todas las estrategias soportan **k-particiones** (k ≥ 2 grupos).
+
+### Estrategias de inspiración matemática avanzada
+
+Gracias a la orientación de matemáticos de la Universidad Nacional, se plantearon tres estrategias adicionales que exploran conexiones con áreas de matemáticas que van más allá del alcance habitual del problema MIP. Se mencionan aquí porque son parte del repositorio y resultan conceptualmente interesantes, aunque por la profundidad de las teorías que las sustentan no se entra en detalles:
+
+- **ParticionVariacional** — basada en el operador de Schrödinger con potencial tipo Airy y en el Laplaciano normalizado espectral. La idea parte de que la frontera de la partición puede verse como el "turning point" de una función de Airy, en analogía con mecánica cuántica.
+
+- **BranchBound** — búsqueda exacta para sistemas pequeños y heurística multi-arranque con expansión de vecindad de Hamming para sistemas grandes. Garantiza el óptimo cuando el número total de bits del subsistema es manejable.
+
+- **ParticionHiperbolica** — inspirada en la fórmula de Ryu-Takayanagi (AdS/CFT, 2006), que establece una equivalencia entre entropía de entrelazamiento cuántico y área de superficies geodésicas en espacios hiperbólicos. Los nodos se proyectan al disco de Poincaré y la partición se busca como la geodésica de menor "costo". Hay conexión formal con la Relatividad General a través de la dualidad espacio Anti-de Sitter / teoría de campos conforme.
 
 ### Infraestructura de búsqueda de k-particiones
 
