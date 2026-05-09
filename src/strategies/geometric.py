@@ -400,6 +400,12 @@ class Geometric(SIA):
             alcance_total,
             mecanismo_total,
         )
+        if len(nodos) >= 6:
+            vistos = set(candidatos)
+            for c in self._candidatos_fiedler(nodos, alcance_total, mecanismo_total):
+                if c not in vistos:
+                    candidatos.append(c)
+                    vistos.add(c)
         mejor_resultado = _ResultadoParticion(
             perdida=float("inf"),
             distribucion=self.sia_dists_marginales.copy(),
@@ -472,7 +478,7 @@ class Geometric(SIA):
                     mejor_resultado = refinado
 
         # Restarts deterministas para escapar minimos locales en sistemas grandes.
-        if len(nodos) >= 8 and mejor_resultado.perdida > self._umbral_restarts:
+        if len(nodos) >= 6 and mejor_resultado.perdida > self._umbral_restarts:
             semillas = self._generar_semillas_aleatorias(
                 total_mascaras=total_mascaras,
                 cantidad=self._random_restarts,
@@ -946,6 +952,95 @@ class Geometric(SIA):
         resultado = (perdida, distribucion)
         self._cache_particiones[clave] = resultado
         return resultado
+
+    # ------------------------------------------------------------------
+    # Candidatos espectrales (Fiedler) para sistemas n >= 6
+    # ------------------------------------------------------------------
+
+    def _conductancias_geometrica(self, nodos: list[int]) -> np.ndarray:
+        """W[i][j] = sensibilidad del nodo i al estado del nodo j (diferencias finitas)."""
+        assert self.sia_subsistema is not None
+        n = len(nodos)
+        idx = {v: i for i, v in enumerate(nodos)}
+        W = np.zeros((n, n), dtype=np.float64)
+        for cubo in self.sia_subsistema.ncubos:
+            i_orig = int(cubo.indice)
+            if i_orig not in idx:
+                continue
+            ii = idx[i_orig]
+            dims = cubo.dims.tolist()
+            data = cubo.data
+            nd = len(dims)
+            for pos, dim_j in enumerate(dims):
+                j_orig = int(dim_j)
+                if j_orig not in idx:
+                    continue
+                jj = idx[j_orig]
+                otras = [d for d in range(nd) if d != pos]
+                otras_sizes = [data.shape[d] for d in otras]
+                n_otras = max(1, int(np.prod(otras_sizes)) if otras_sizes else 1)
+                total = 0.0
+                for estado_idx in range(n_otras):
+                    idx_otras: list[int] = []
+                    temp = estado_idx
+                    for s in reversed(otras_sizes):
+                        idx_otras.append(temp % s)
+                        temp //= s
+                    idx_otras = list(reversed(idx_otras))
+                    idx_0 = [0] * nd
+                    idx_1 = [0] * nd
+                    idx_0[pos] = 0
+                    idx_1[pos] = 1
+                    for k_ot, d_ot in enumerate(otras):
+                        idx_0[d_ot] = idx_otras[k_ot]
+                        idx_1[d_ot] = idx_otras[k_ot]
+                    total += abs(float(data[tuple(idx_0)]) - float(data[tuple(idx_1)]))
+                W[ii][jj] = total / n_otras
+        return W
+
+    def _candidatos_fiedler(
+        self,
+        nodos: list[int],
+        alcance_total: tuple[int, ...],
+        mecanismo_total: tuple[int, ...],
+    ) -> list[tuple[tuple[int, ...], tuple[int, ...]]]:
+        """Particiones derivadas del vector de Fiedler del Laplaciano simetrizado."""
+        n = len(nodos)
+        if n < 3:
+            return []
+        try:
+            W = self._conductancias_geometrica(nodos)
+            W_sym = (W + W.T) / 2.0
+            grado = W_sym.sum(axis=1)
+            if grado.max() < 1e-12:
+                return []
+            L = np.diag(grado) - W_sym
+            vals, vecs = np.linalg.eigh(L)
+            fiedler = vecs[:, 1]
+        except Exception:
+            return []
+
+        candidatos: list[tuple[tuple[int, ...], tuple[int, ...]]] = []
+        vistos: set[tuple[tuple[int, ...], tuple[int, ...]]] = set()
+
+        umbrales = [np.percentile(fiedler, p) for p in [0, 25, 50, 75]]
+        for umbral in umbrales:
+            seleccionados = {nodos[i] for i in range(n) if fiedler[i] >= umbral}
+            if not seleccionados or seleccionados == set(nodos):
+                continue
+            subalcance = tuple(v for v in alcance_total if v in seleccionados)
+            submecanismo = tuple(v for v in mecanismo_total if v in seleccionados)
+            if not subalcance and not submecanismo:
+                comp = set(nodos) - seleccionados
+                subalcance = tuple(v for v in alcance_total if v in comp)
+                submecanismo = tuple(v for v in mecanismo_total if v in comp)
+            if not subalcance and not submecanismo:
+                continue
+            clave = (subalcance, submecanismo)
+            if clave not in vistos:
+                vistos.add(clave)
+                candidatos.append(clave)
+        return candidatos
 
     # ------------------------------------------------------------------
     # Dendrograma divisivo para k-particiones

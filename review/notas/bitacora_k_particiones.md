@@ -1689,3 +1689,61 @@ PYTHONPATH=. python review/benchmarks/benchmark_n_grande_circuito.py
 PYTHONPATH=. python review/benchmarks/analisis_qnodos_k2.py
 PYTHONPATH=. python review/benchmarks/visualizacion_dendrograma.py
 ```
+
+---
+
+## Parte 18 — Corrección de QNodos k=2 y Geometric n>6: resultados exactos
+
+### 18.1 Problema identificado y solución para QNodos k=2
+
+La Parte 17 demostró que f(S) = EMD(biparticion_S) viola submodularidad en el 12.3% de los pares testeados. Esto explica por qué el MAO (Maximum Adjacency Ordering) de Queyranne no garantizaba el óptimo para k=2.
+
+**Solución implementada:**
+
+1. **Multi-start MAO** (`_mao_multi_start`): ejecuta el algoritmo de Queyranne con hasta 8 rotaciones distintas del orden de vértices. Cada rotación puede encontrar un mínimo distinto cuando f no es submodular. Usa el mismo evaluador (`bipartir`) que el MAO original para mantener consistencia.
+
+2. **SA post-MAO** (`_sa_biparticion`): refinamiento por recocido simulado con movimientos de flip (mover un vértice de A a B o viceversa), usando también `bipartir` como evaluador. Esto permite escapar mínimos locales que el MAO no puede evitar.
+
+La clave del diseño: ambas mejoras usan **exactamente el mismo evaluador** que el MAO original (`bipartir`), evitando inconsistencias entre evaluaciones.
+
+### 18.2 Problema identificado y solución para Geometric n>6
+
+Para n > 5 la estrategia usaba `_resolver_geometrico_refinado` (heurística del hipercubo), que en n=7 producía una brecha del 218% porque los candidatos del hipercubo no incluían la bipartición óptima.
+
+**Solución implementada:**
+
+1. **Candidatos Fiedler** (`_candidatos_fiedler`): computa el vector de Fiedler del Laplaciano simétrico del grafo de conductancias y genera particiones usando múltiples umbrales (percentiles 0, 25, 50, 75). Estos candidatos son ortogonales a los del hipercubo y cubren un espacio diferente.
+
+2. **Threshold de restarts bajado**: de `n >= 8` a `n >= 6`, activando los restarts aleatorios también para n=6 y n=7.
+
+Los candidatos Fiedler se añaden al pool existente cuando `n >= 6`, sin reemplazar la búsqueda del hipercubo.
+
+### 18.3 Resultados
+
+#### Benchmark n=4,5 (referencia exacta con FuerzaBruta)
+
+| Estrategia | n=4 k=2 antes | n=4 k=2 después | n=5 k=2 antes | n=5 k=2 después |
+|---|---|---|---|---|
+| QNodos | +155.8% | **+0.0%** ✓ | +57421% | **+0.0%** ✓ |
+| Geometric | +0.0% | +0.0% | +0.0% | +0.0% |
+
+#### Benchmark n=6,7 (antes vs después)
+
+| Estrategia | n=6 antes | n=6 después | n=7 antes | n=7 después |
+|---|---|---|---|---|
+| QNodos | +144.3% | **+0.0%** ✓ | +209.3% | **+0.0%** ✓ |
+| Geometric | +4.7% | **+0.0%** ✓ | +218.2% | **+0.0%** ✓ |
+
+**Conclusión**: QNodos y Geometric ahora encuentran el óptimo exacto para k=2 en todos los tamaños de sistema probados (n=4 a n=7).
+
+El test `test_qnodes_matches_sample_a_reference_case` fue actualizado: el valor esperado pasó de perdida=0.5 (resultado del MAO, incorrecto) a perdida=0.25 (óptimo real confirmado por FuerzaBruta). El MAO tenía un error de 100% en ese caso de prueba.
+
+### 18.4 Archivos modificados
+
+| Archivo | Cambio |
+|---|---|
+| `src/estrategias/q_nodos.py` | `_sa_biparticion`, `_mao_multi_start`, cambia flujo k=2 |
+| `src/strategies/geometric.py` | `_conductancias_geometrica`, `_candidatos_fiedler`, umbral restarts 8→6 |
+| `tests/test_strategy_q_nodes.py` | Corrige valor esperado (0.5→0.25) al óptimo real |
+| `review/benchmarks/todas_estrategias_resumen.csv` | Actualizado con nuevos resultados |
+| `review/benchmarks/n_grande_circuito_detalle.csv` | Actualizado con nuevos resultados |

@@ -61,8 +61,8 @@ def test_qnodes_matches_sample_a_reference_case() -> None:
     )
 
     assert resultado.distribucion_subsistema.tolist() == [0.0, 0.0, 1.0]
-    assert resultado.distribucion_particion.tolist() == [0.0, 0.0, 0.5]
-    assert resultado.perdida == 0.5
+    assert resultado.distribucion_particion.tolist() == [0.0, 0.25, 1.0]
+    assert resultado.perdida == 0.25
 
 
 def test_qnodes_accepts_k_particiones() -> None:

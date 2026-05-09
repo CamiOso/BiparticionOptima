@@ -156,14 +156,26 @@ class QNodos(SIA):
                 particion=fmt_k_particion_q(grupos),
             )
 
-        clave_mip = self.algoritmo_q(vertices)
-        perdida_mip, distribucion_particion = self.memoria_grupo_candidato[clave_mip]
-        assert distribucion_particion is not None
+        # MAO da el corte inicial; SA refina usando el mismo evaluador (bipartir)
+        # para escapar minimos locales por no-submodularidad de f.
+        clave_mip, perdida_mao, dist_mao = self._mao_multi_start(vertices)
+        assert dist_mao is not None
+
+        grupo_a_inicial = set(clave_mip)
+        clave_sa, perdida_sa, dist_sa = self._sa_biparticion(vertices, grupo_a_inicial)
+
+        if perdida_sa < perdida_mao - 1e-9:
+            clave_mip = clave_sa
+            perdida_mip = perdida_sa
+            distribucion_particion = dist_sa
+        else:
+            perdida_mip = perdida_mao
+            distribucion_particion = dist_mao
+
         biparticion = fmt_biparticion_q(
             list(clave_mip),
             self.nodos_complemento(list(clave_mip)),
         )
-
         return Solucion(
             estrategia="QNodos",
             perdida=float(perdida_mip),
@@ -172,6 +184,118 @@ class QNodos(SIA):
             estado_inicial=estado_inicial,
             particion=biparticion,
         )
+
+    def _sa_biparticion(
+        self,
+        vertices: list[tuple[int, int]],
+        grupo_a_inicial: set[tuple[int, int]],
+        temp_inicial: float = 1.0,
+        temp_final: float = 0.001,
+        factor: float = 0.92,
+        pasos_por_temp: int = 30,
+    ) -> tuple[tuple[tuple[int, int], ...], float, np.ndarray]:
+        """SA sobre biparticiones usando el mismo evaluador (bipartir) que MAO.
+
+        Realiza movimientos de flip (mover un vertice de A a B o viceversa).
+        Al usar bipartir directamente no hay inconsistencia con el resultado MAO.
+        """
+        assert self.sia_subsistema is not None
+        assert self.sia_dists_marginales is not None
+
+        full_set = set(vertices)
+
+        def evaluar(grupo_a: set) -> tuple[float, np.ndarray]:
+            mec = [v for t, v in grupo_a if t == 0]
+            alc = [v for t, v in grupo_a if t == 1]
+            sp = self.sia_subsistema.bipartir(
+                np.array(alc, dtype=np.int8),
+                np.array(mec, dtype=np.int8),
+            )
+            dp = _alinear_distribucion(sp.distribucion_marginal(), self.sia_dists_marginales)
+            return float(self.distancia_metrica(dp, self.sia_dists_marginales)), dp
+
+        actual_a = set(grupo_a_inicial)
+        actual_perdida, actual_dist = evaluar(actual_a)
+        mejor_a = frozenset(actual_a)
+        mejor_perdida = actual_perdida
+        mejor_dist = actual_dist
+
+        rng = np.random.default_rng(aplicacion.semilla_numpy + len(vertices))
+        temp = temp_inicial
+
+        while temp > temp_final:
+            for _ in range(pasos_por_temp):
+                lista_a = list(actual_a)
+                lista_b = list(full_set - actual_a)
+                if not lista_a or not lista_b:
+                    continue
+                if lista_a and lista_b and rng.random() < 0.5:
+                    v = lista_a[int(rng.integers(len(lista_a)))]
+                    nueva_a = actual_a - {v}
+                else:
+                    v = lista_b[int(rng.integers(len(lista_b)))]
+                    nueva_a = actual_a | {v}
+                if not nueva_a or nueva_a == full_set:
+                    continue
+                nueva_perdida, nueva_dist = evaluar(nueva_a)
+                delta = nueva_perdida - actual_perdida
+                if delta < 0 or rng.random() < float(np.exp(-delta / temp)):
+                    actual_a = nueva_a
+                    actual_perdida = nueva_perdida
+                    actual_dist = nueva_dist
+                    if actual_perdida < mejor_perdida:
+                        mejor_perdida = actual_perdida
+                        mejor_a = frozenset(actual_a)
+                        mejor_dist = actual_dist
+            temp *= factor
+
+        clave_sa = tuple(sorted(mejor_a, key=lambda v: (v[0], v[1])))
+        return clave_sa, mejor_perdida, mejor_dist
+
+    def _mao_multi_start(
+        self,
+        vertices: list[tuple[int, int]],
+        n_starts: int = 8,
+    ) -> tuple[tuple[tuple[int, int], ...], float, np.ndarray | None]:
+        """MAO con multiples ordenes de inicio para funciones no submodulares.
+
+        Rota el vertice de arranque hasta n_starts veces. Cada rotacion puede
+        encontrar un corte minimo distinto cuando f viola submodularidad. Usa el
+        mismo evaluador (bipartir) que algoritmo_q para garantizar consistencia.
+        """
+        n = len(vertices)
+        n_starts = min(n_starts, n)
+
+        mejor_perdida = float("inf")
+        mejor_clave: tuple[tuple[int, int], ...] | None = None
+        mejor_dist: np.ndarray | None = None
+
+        mem_candidato_global: dict[tuple, tuple[float, np.ndarray | None]] = {}
+
+        for i in range(n_starts):
+            k = (i * max(1, n // n_starts)) % n
+            orden = vertices[k:] + vertices[:k]
+
+            mem_prev = dict(self.memoria_grupo_candidato)
+            self.memoria_grupo_candidato.clear()
+            try:
+                clave = self.algoritmo_q(orden)
+                perdida, dist = self.memoria_grupo_candidato.get(clave, (float("inf"), None))
+                if perdida < mejor_perdida and dist is not None:
+                    mejor_perdida = perdida
+                    mejor_clave = clave
+                    mejor_dist = dist
+                mem_candidato_global.update(self.memoria_grupo_candidato)
+            except Exception:
+                pass
+            self.memoria_grupo_candidato = mem_prev
+
+        self.memoria_grupo_candidato.update(mem_candidato_global)
+        if mejor_clave is None:
+            mejor_clave = self.algoritmo_q(vertices)
+            mejor_perdida, mejor_dist = self.memoria_grupo_candidato[mejor_clave]
+
+        return mejor_clave, mejor_perdida, mejor_dist
 
     def algoritmo_q(
         self,
