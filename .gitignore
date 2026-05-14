@@ -16,3 +16,4 @@ review/salidas/
 .coverage
 htmlcov/
 src/.samples/N20A.csv
+src/.samples/N22A.csv
