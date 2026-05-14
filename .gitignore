@@ -17,3 +17,5 @@ review/salidas/
 htmlcov/
 src/.samples/N20A.csv
 src/.samples/N22A.csv
+src/.samples/N25A.csv
+src/.samples/*.npy
