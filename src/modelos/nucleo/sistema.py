@@ -5,6 +5,9 @@ from src.funciones.iit import seleccionar_estado
 from src.modelos.nucleo.ncubo import NCube
 
 
+_MAX_MEMO_SISTEMA = 256
+
+
 class Sistema:
     """Sistema compuesto por n-cubos derivados de una TPM."""
 
@@ -89,6 +92,9 @@ class Sistema:
         clave = (tuple(int(v) for v in alcance_preservado), tuple(int(v) for v in mecanismo_preservado))
         memo = getattr(self, "memo", {})
         if clave not in memo:
+            if len(memo) >= _MAX_MEMO_SISTEMA:
+                for k in list(memo.keys())[: _MAX_MEMO_SISTEMA // 2]:
+                    del memo[k]
             memo[clave] = tuple(
                 cubo.marginalizar(np.setdiff1d(cubo.dims, mecanismo_preservado))
                 if cubo.indice in alcance_preservado
@@ -109,6 +115,9 @@ class Sistema:
         clave = ("k", tuple(sorted(nodo_grupo.items())))
         memo = getattr(self, "memo", {})
         if clave not in memo:
+            if len(memo) >= _MAX_MEMO_SISTEMA:
+                for k in list(memo.keys())[: _MAX_MEMO_SISTEMA // 2]:
+                    del memo[k]
             nuevos_cubos = []
             for cubo in self.ncubos:
                 g_i = nodo_grupo.get(int(cubo.indice), 0)
@@ -149,6 +158,9 @@ class Sistema:
         )
         memo = getattr(self, "memo", {})
         if clave not in memo:
+            if len(memo) >= _MAX_MEMO_SISTEMA:
+                for k in list(memo.keys())[: _MAX_MEMO_SISTEMA // 2]:
+                    del memo[k]
             nuevos_cubos = []
             for cubo in self.ncubos:
                 grupo_futuro = alcance_a_grupo.get(int(cubo.indice), -1)

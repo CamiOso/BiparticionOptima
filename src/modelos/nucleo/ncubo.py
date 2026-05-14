@@ -3,6 +3,8 @@ from dataclasses import dataclass, field
 import numpy as np
 from numpy.typing import NDArray
 
+_MAX_MEMO_NCUBE = 64
+
 
 @dataclass(frozen=True)
 class NCube:
@@ -64,6 +66,9 @@ class NCube:
             )
 
             data_marginal = np.mean(self.data, axis=ejes_locales, keepdims=False)
+            if len(self.memo) >= _MAX_MEMO_NCUBE:
+                for k in list(self.memo.keys())[: _MAX_MEMO_NCUBE // 2]:
+                    del self.memo[k]
             self.memo[key] = (data_marginal, new_dims)
 
         return NCube(
