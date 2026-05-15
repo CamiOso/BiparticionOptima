@@ -15,6 +15,57 @@ CONDICION = "1" * 20
 GEO_COLS  = {2: (7,8,9), 3: (13,14,15), 4: (19,20,21), 5: (25,26,27)}
 
 FILAS = {
+    # alc=20 mec=20/19
+    6:  ("ABCDEFGHIJKLMNOPQRST", "ABCDEFGHIJKLMNOPQRST"),
+    7:  ("ABCDEFGHIJKLMNOPQRST", "ABCDEFGHIJKLMNOPQRS"),
+    8:  ("ABCDEFGHIJKLMNOPQRST", "BCDEFGHIJKLMNOPQRST"),
+    # alc=20 mec=18/14/10
+    11: ("ABCDEFGHIJKLMNOPQRST", "ACEGIKMOQS"),
+    12: ("ABCDEFGHIJKLMNOPQRST", "BDFHJLNPRT"),
+    10: ("ABCDEFGHIJKLMNOPQRST", "ABDEGHJKMNPQST"),
+    9:  ("ABCDEFGHIJKLMNOPQRST", "BCDEFGHIJKLMNOPQRS"),
+    # alc=19 ABCDEFGHIJKLMNOPQRS mec=20/19
+    13: ("ABCDEFGHIJKLMNOPQRS",  "ABCDEFGHIJKLMNOPQRST"),
+    14: ("ABCDEFGHIJKLMNOPQRS",  "ABCDEFGHIJKLMNOPQRS"),
+    15: ("ABCDEFGHIJKLMNOPQRS",  "BCDEFGHIJKLMNOPQRST"),
+    # alc=19 ABCDEFGHIJKLMNOPQRS mec=18/14/10
+    18: ("ABCDEFGHIJKLMNOPQRS",  "ACEGIKMOQS"),
+    19: ("ABCDEFGHIJKLMNOPQRS",  "BDFHJLNPRT"),
+    17: ("ABCDEFGHIJKLMNOPQRS",  "ABDEGHJKMNPQST"),
+    16: ("ABCDEFGHIJKLMNOPQRS",  "BCDEFGHIJKLMNOPQRS"),
+    # alc=19 BCDEFGHIJKLMNOPQRST mec=20/19
+    20: ("BCDEFGHIJKLMNOPQRST",  "ABCDEFGHIJKLMNOPQRST"),
+    21: ("BCDEFGHIJKLMNOPQRST",  "ABCDEFGHIJKLMNOPQRS"),
+    22: ("BCDEFGHIJKLMNOPQRST",  "BCDEFGHIJKLMNOPQRST"),
+    # alc=19 BCDEFGHIJKLMNOPQRST mec=18/14/10
+    25: ("BCDEFGHIJKLMNOPQRST",  "ACEGIKMOQS"),
+    26: ("BCDEFGHIJKLMNOPQRST",  "BDFHJLNPRT"),
+    24: ("BCDEFGHIJKLMNOPQRST",  "ABDEGHJKMNPQST"),
+    23: ("BCDEFGHIJKLMNOPQRST",  "BCDEFGHIJKLMNOPQRS"),
+    # alc=18 BCDEFGHIJKLMNOPQRS mec=20/19
+    27: ("BCDEFGHIJKLMNOPQRS", "ABCDEFGHIJKLMNOPQRST"),
+    28: ("BCDEFGHIJKLMNOPQRS", "ABCDEFGHIJKLMNOPQRS"),
+    29: ("BCDEFGHIJKLMNOPQRS", "BCDEFGHIJKLMNOPQRST"),
+    # alc=14 mec=20/19
+    34: ("ABDEGHJKMNPQST", "ABCDEFGHIJKLMNOPQRST"),
+    35: ("ABDEGHJKMNPQST", "ABCDEFGHIJKLMNOPQRS"),
+    36: ("ABDEGHJKMNPQST", "BCDEFGHIJKLMNOPQRST"),
+    # alc=10 mec=20/19
+    41: ("ACEGIKMOQS", "ABCDEFGHIJKLMNOPQRST"),
+    42: ("ACEGIKMOQS", "ABCDEFGHIJKLMNOPQRS"),
+    43: ("ACEGIKMOQS", "BCDEFGHIJKLMNOPQRST"),
+    48: ("BDFHJLNPRT", "ABCDEFGHIJKLMNOPQRST"),
+    49: ("BDFHJLNPRT", "ABCDEFGHIJKLMNOPQRS"),
+    50: ("BDFHJLNPRT", "BCDEFGHIJKLMNOPQRST"),
+    # alc=18 casos
+    30: ("BCDEFGHIJKLMNOPQRS", "BCDEFGHIJKLMNOPQRS"),
+    31: ("BCDEFGHIJKLMNOPQRS", "ABDEGHJKMNPQST"),
+    32: ("BCDEFGHIJKLMNOPQRS", "ACEGIKMOQS"),
+    33: ("BCDEFGHIJKLMNOPQRS", "BDFHJLNPRT"),
+    37: ("ABDEGHJKMNPQST",     "BCDEFGHIJKLMNOPQRS"),
+    44: ("ACEGIKMOQS",         "BCDEFGHIJKLMNOPQRS"),
+    51: ("BDFHJLNPRT",         "BCDEFGHIJKLMNOPQRS"),
+    # alc=10 casos originales
     45: ("ACEGIKMOQS",   "ABDEGHJKMNPQST"),
     47: ("ACEGIKMOQS",   "BDFHJLNPRT"),
     52: ("BDFHJLNPRT",   "ABDEGHJKMNPQST"),
@@ -57,6 +108,7 @@ def guardar_k(fila_idx, k, part, perd, elapsed):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("fila", type=int)
+    parser.add_argument("--start-k", type=int, default=2, choices=[2, 3, 4, 5])
     args = parser.parse_args()
     fila_idx = args.fila
     alc_letras, mec_letras = FILAS[fila_idx]
@@ -70,10 +122,10 @@ if __name__ == "__main__":
     alc_mask = to_mask(alc_letras)
     mec_mask = to_mask(mec_letras)
     n_max = max(len(alc_letras), len(mec_letras))
-    print(f"[fila={fila_idx}] n_max={n_max} | {alc_letras} / {mec_letras}", flush=True)
+    print(f"[fila={fila_idx}] n_max={n_max} | {alc_letras} / {mec_letras} | start_k={args.start_k}", flush=True)
 
     t_fila = time.perf_counter()
-    for k in (2, 3, 4, 5):
+    for k in (k for k in (2, 3, 4, 5) if k >= args.start_k):
         t0 = time.perf_counter()
         res = geo.aplicar_estrategia(
             estado_inicial=ESTADO, condicion=CONDICION,
