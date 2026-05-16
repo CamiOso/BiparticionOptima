@@ -52,3 +52,6 @@ while [ $i -lt ${#COLA[@]} ]; do
 done
 
 echo "[GEO-COLA] TODAS LAS FILAS COMPLETADAS — $(date)"
+
+echo "[GEO-COLA] Lanzando cola 22A..."
+bash run_geo_cola_22A.sh > /tmp/geo22_cola_master.log 2>&1

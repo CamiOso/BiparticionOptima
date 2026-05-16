@@ -44,3 +44,6 @@ while [ $i -lt ${#COLA[@]} ]; do
 done
 
 echo "[QNODOS-COLA] TODAS LAS FILAS COMPLETADAS — $(date)"
+
+echo "[QNODOS-COLA] Lanzando cola 22A..."
+bash run_qnodos_cola_22A.sh > /tmp/qnodos22_cola_master.log 2>&1

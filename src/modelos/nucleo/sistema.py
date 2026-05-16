@@ -2,6 +2,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from src.funciones.iit import seleccionar_estado
+from src.modelos.base.aplicacion import aplicacion
 from src.modelos.nucleo.ncubo import NCube
 
 
@@ -95,9 +96,14 @@ class Sistema:
             if len(memo) >= _MAX_MEMO_SISTEMA:
                 for k in list(memo.keys())[: _MAX_MEMO_SISTEMA // 2]:
                     del memo[k]
+            # Pre-computar sets para lookups O(1) en vez de O(n) con arrays numpy
+            alc_set = {int(v) for v in alcance_preservado}
+            mec_set = {int(v) for v in mecanismo_preservado}
             memo[clave] = tuple(
-                cubo.marginalizar(np.setdiff1d(cubo.dims, mecanismo_preservado))
-                if cubo.indice in alcance_preservado
+                cubo.marginalizar(
+                    np.array([d for d in cubo.dims if int(d) not in mec_set], dtype=np.int8)
+                )
+                if int(cubo.indice) in alc_set
                 else cubo.marginalizar(mecanismo_preservado)
                 for cubo in self.ncubos
             )
@@ -183,12 +189,16 @@ class Sistema:
         if not self.ncubos:
             return np.array([], dtype=np.float32)
 
+        # seleccionar_estado solo invierte el tuple para little-endian.
+        # Evitamos crear un array numpy intermedio (ahorra ~0.15ms × 12K llamadas).
+        _little_endian = aplicacion.notacion_indexado == "little-endian"
         probabilidades = []
         for cubo in self.ncubos:
             probabilidad = cubo.data
             if cubo.dims.size:
                 inicial = tuple(int(self.estado_inicial[int(dim)]) for dim in cubo.dims)
-                probabilidad = cubo.data[tuple(seleccionar_estado(np.array(inicial, dtype=np.int8)).tolist())]
+                idx = inicial[::-1] if _little_endian else inicial
+                probabilidad = cubo.data[idx]
             probabilidades.append(float(probabilidad))
         return np.array(probabilidades, dtype=np.float32)
 
