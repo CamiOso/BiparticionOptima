@@ -42,27 +42,31 @@ COLA=(
 )
 
 run_par() {
-    local ITEM1=$1 ITEM2=$2
+    local ITEM1=$1 ITEM2=${2:-} ITEM3=${3:-}
     local FILA1=${ITEM1%%:*} SK1=${ITEM1##*:}
-    local FILA2=${ITEM2%%:*} SK2=${ITEM2##*:}
     echo "========================================"
-    echo "[GEO-25A] Lanzando fila $FILA1 ${FILA2:+y fila $FILA2} — $(date)"
+    echo "[GEO-25A] Lanzando fila $FILA1${ITEM2:+ y ${ITEM2%%:*}}${ITEM3:+ y ${ITEM3%%:*}} — $(date)"
     echo "========================================"
     python3 -u run_geo_single_25A.py $FILA1 --start-k $SK1 > /tmp/geo25_${FILA1}.log 2>&1 &
-    local PID1=$!
-    if [ -n "$FILA2" ]; then
+    local PIDS="$!"
+    if [ -n "$ITEM2" ]; then
+        local FILA2=${ITEM2%%:*} SK2=${ITEM2##*:}
         python3 -u run_geo_single_25A.py $FILA2 --start-k $SK2 > /tmp/geo25_${FILA2}.log 2>&1 &
-        wait $PID1 $!
-    else
-        wait $PID1
+        PIDS="$PIDS $!"
     fi
-    echo "[GEO-25A] Par terminado — $(date)"
+    if [ -n "$ITEM3" ]; then
+        local FILA3=${ITEM3%%:*} SK3=${ITEM3##*:}
+        python3 -u run_geo_single_25A.py $FILA3 --start-k $SK3 > /tmp/geo25_${FILA3}.log 2>&1 &
+        PIDS="$PIDS $!"
+    fi
+    wait $PIDS
+    echo "[GEO-25A] Trio terminado — $(date)"
 }
 
 i=0
 while [ $i -lt ${#COLA[@]} ]; do
-    run_par "${COLA[$i]}" "${COLA[$((i+1))]}"
-    i=$((i+2))
+    run_par "${COLA[$i]}" "${COLA[$((i+1))]-}" "${COLA[$((i+2))]-}"
+    i=$((i+3))
 done
 
 echo "[GEO-25A] TODAS LAS FILAS COMPLETADAS — $(date)"

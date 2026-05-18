@@ -424,9 +424,69 @@ review/
 
 ---
 
+## Pruebas experimentales a gran escala
+
+Experimentos sobre sistemas de **20, 22 y 25 nodos** usando las estrategias **QNodos** y **Geometric** para k = 2, 3, 4, 5. Los resultados se guardan en `DatosPruebas2026_1.xlsx` (hojas `20A-Elementos`, `22A-Elementos`, `25A-Elementos`).
+
+### Estado actual (mayo 2026)
+
+| Sistema | Estrategia | Filas completadas | Observaciones |
+|---------|------------|:-----------------:|---------------|
+| 20 nodos | QNodos     | 49 / 50           | Fila 6 en curso (mec=20, k=5); termina ~esta noche |
+| 20 nodos | Geometric  | ~22 / 50          | Fila 51 en k=5 (~16h/k); cola continúa automáticamente |
+| 22 nodos | QNodos     |  8 / 50           | Cola encadenada; arranca automáticamente al terminar 20A |
+| 22 nodos | Geometric  |  2 / 50           | Arranca automáticamente al terminar Geometric 20A |
+| 25 nodos | QNodos     |  0 / 50           | Encadenado tras 22A QNodos |
+| 25 nodos | Geometric  |  0 / 50           | Encadenado tras 22A Geometric |
+
+### Ejecución de los experimentos
+
+Los scripts están en `scripts/` con symlinks en la raíz del proyecto para compatibilidad:
+
+```
+scripts/
+  run_qnodos_single.py        # Una fila de 20A — QNodos
+  run_qnodos_single_22A.py    # Una fila de 22A — QNodos
+  run_qnodos_single_25A.py    # Una fila de 25A — QNodos
+  run_geo_single.py           # Una fila de 20A — Geometric
+  run_geo_single_22A.py       # Una fila de 22A — Geometric
+  run_geo_single_25A.py       # Una fila de 25A — Geometric
+  run_qnodos_cola.sh          # Cola completa 20A QNodos → 22A → 25A
+  run_qnodos_cola_22A.sh      # Cola completa 22A QNodos → 25A
+  run_qnodos_cola_25A.sh      # Cola completa 25A QNodos
+  run_geo_cola.sh             # Cola completa 20A Geometric → 22A → 25A
+  run_geo_cola_22A.sh         # Cola completa 22A Geometric → 25A
+  run_geo_cola_25A.sh         # Cola completa 25A Geometric
+```
+
+Cada script de fila única acepta `--start-k` para reanudar desde una k intermedia. Las colas corren de a dos filas en paralelo y encadenan automáticamente el siguiente sistema al terminar.
+
+```bash
+# Ejecutar una fila específica
+OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
+  python3 -u scripts/run_qnodos_single.py 10
+
+# Reanudar desde k=3
+python3 -u scripts/run_geo_single_22A.py 45 --start-k 3
+
+# Lanzar la cola completa (20A → 22A → 25A) en segundo plano
+nohup bash run_qnodos_cola.sh > /tmp/qnodos_cola_master.log 2>&1 &
+```
+
+### Notas de rendimiento
+
+- Coste por evaluación: O(2^mec) — mec=20 es 32× más caro que mec=15.
+- Filas con mec=24 (QNodos k=3): ~37 min. Geometric k=3: ~16 h.
+- Se usa `mmap_mode="r"` para compartir la TPM (~3 GB para N25A) entre procesos.
+- Variables `OMP_NUM_THREADS=1` y `OPENBLAS_NUM_THREADS=1` evitan la explosión de hilos de OpenBLAS.
+
+---
+
 ## Muestras incluidas
 
-`src/.samples/`: `N4A.csv`, `N5A.csv`, `N6A.csv`, `N7A.csv`, `N8A.csv`
+`src/.samples/`: `N4A.csv`, `N5A.csv`, `N6A.csv`, `N7A.csv`, `N8A.csv`, `N20A.csv`, `N22A.csv`
+
+Los archivos `.npy` de sistemas grandes (`N20A.npy`, `N22A.npy`, `N25A.npy`) están excluidos del repositorio por tamaño (`.gitignore`); se generan localmente con `scripts/gen_N25A.py` o cargando las muestras CSV.
 
 ---
 
