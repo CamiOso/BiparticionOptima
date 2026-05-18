@@ -325,26 +325,41 @@ class Geometric(SIA):
                 if 0 < mascara_comp < mascara_total and not np.isfinite(costos_locales[mascara_comp]):
                     costos_locales[mascara_comp] = perdida_local
 
-        for mascara in range(1, total_mascaras):
-            perdida_local = float(costos_locales[mascara])
-            if not np.isfinite(perdida_local):
+        # candidatos_costo_cero via numpy
+        _fin_lc = np.isfinite(costos_locales)
+        _internal = np.zeros(total_mascaras, dtype=bool)
+        if mascara_total > 1:
+            _internal[1:mascara_total] = True
+        candidatos_costo_cero.update(
+            np.where(_fin_lc & (costos_locales <= 1e-12) & _internal)[0].tolist()
+        )
+
+        # DP vectorizado por nivel de popcount (orden topologico garantizado).
+        # Semantica identica al bucle Python original: sin perdida de calidad.
+        _gamma = np.float64(0.5)
+        _all_idx = np.arange(total_mascaras, dtype=np.int64)
+        _pop = np.zeros(total_mascaras, dtype=np.int32)
+        for _b in range(n_nodos):
+            _pop += ((_all_idx >> _b) & 1).astype(np.int32)
+
+        for _level in range(1, n_nodos + 1):
+            _lm = _all_idx[_pop == _level]
+            _lc = costos_locales[_lm]
+            _valid = np.isfinite(_lc)
+            if not _valid.any():
                 continue
-
-            if perdida_local <= 1e-12 and mascara != mascara_total:
-                candidatos_costo_cero.add(mascara)
-
-            bits = mascara
-            while bits:
-                lsb = bits & -bits
-                anterior = mascara ^ lsb
-                if not np.isfinite(costos[anterior]):
-                    bits ^= lsb
+            _lm_v = _lm[_valid]
+            _lc_v = _lc[_valid]
+            _min_pred = np.full(len(_lm_v), np.inf, dtype=np.float64)
+            for _b in range(n_nodos):
+                _bv = np.int64(1 << _b)
+                _has = (_lm_v & _bv).astype(bool)
+                if not _has.any():
                     continue
-                gamma = 2.0 ** (-1)
-                costo = costos[anterior] + gamma * perdida_local
-                if costo < costos[mascara]:
-                    costos[mascara] = costo
-                bits ^= lsb
+                _pred_costs = costos[(_lm_v[_has] ^ _bv).astype(np.intp)]
+                np.minimum(_min_pred[_has], _pred_costs, out=_min_pred[_has])
+            _candidates = _min_pred + _gamma * _lc_v
+            np.minimum(costos[_lm_v.astype(np.intp)], _candidates, out=costos[_lm_v.astype(np.intp)])
 
         if not candidatos_costo_cero:
             internas_finitas = [
