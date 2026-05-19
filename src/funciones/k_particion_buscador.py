@@ -73,6 +73,8 @@ class BuscadorKParticion(ABC):
     def refinar_local(self, inicio: ResultadoKParticion, k: int) -> ResultadoKParticion:
         actual = inicio
         mejor = inicio
+        if mejor.perdida <= 1e-12:
+            return mejor
         for _ in range(self.max_iter_refinamiento):
             candidatos = self.vecinos(actual.asignacion, k)
             if not candidatos:
@@ -195,6 +197,9 @@ class BuscadorKRecocido(BuscadorKParticion):
             asignacion=asig_actual,
         )
 
+        if mejor.perdida <= 1e-12:
+            return mejor
+
         temp = self.temp_inicial
         while temp > self.temp_final:
             for _ in range(self.pasos_por_temp):
@@ -234,6 +239,8 @@ class BuscadorKRecocido(BuscadorKParticion):
                         )
 
             temp *= self.factor_enfriamiento
+            if mejor.perdida <= 1e-12:
+                break
 
         return mejor
 
@@ -259,10 +266,14 @@ class BuscadorKRecocido(BuscadorKParticion):
         hace que las cadenas posteriores sean mas rapidas que la primera.
         """
         mejor = self._recocido(k, semilla)
+        if mejor.perdida <= 1e-12:
+            return mejor
         for i in range(1, self.n_cadenas):
             candidato = self._recocido(k, semilla + i * 1009)
             if candidato.perdida < mejor.perdida:
                 mejor = candidato
+            if mejor.perdida <= 1e-12:
+                break
         return mejor
 
 

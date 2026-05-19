@@ -186,21 +186,21 @@ class Sistema:
 
     def distribucion_marginal(self) -> NDArray[np.float32]:
         """Calcula P(nodo_i = ON) en el estado inicial para cada n-cubo."""
-        if not self.ncubos:
+        n = len(self.ncubos)
+        if not n:
             return np.array([], dtype=np.float32)
 
-        # seleccionar_estado solo invierte el tuple para little-endian.
-        # Evitamos crear un array numpy intermedio (ahorra ~0.15ms × 12K llamadas).
         _little_endian = aplicacion.notacion_indexado == "little-endian"
-        probabilidades = []
-        for cubo in self.ncubos:
-            probabilidad = cubo.data
+        out = np.empty(n, dtype=np.float32)
+        estado = self.estado_inicial
+        for i, cubo in enumerate(self.ncubos):
             if cubo.dims.size:
-                inicial = tuple(int(self.estado_inicial[int(dim)]) for dim in cubo.dims)
+                inicial = tuple(int(estado[int(dim)]) for dim in cubo.dims)
                 idx = inicial[::-1] if _little_endian else inicial
-                probabilidad = cubo.data[idx]
-            probabilidades.append(float(probabilidad))
-        return np.array(probabilidades, dtype=np.float32)
+                out[i] = cubo.data[idx]
+            else:
+                out[i] = cubo.data
+        return out
 
 
 # Alias retrocompatible.

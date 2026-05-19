@@ -432,12 +432,17 @@ Experimentos sobre sistemas de **20, 22 y 25 nodos** usando las estrategias **QN
 
 | Sistema | Estrategia | Filas completadas | Observaciones |
 |---------|------------|:-----------------:|---------------|
-| 20 nodos | QNodos     | 49 / 50           | Fila 6 en curso (mec=20, k=5); termina ~esta noche |
-| 20 nodos | Geometric  | ~22 / 50          | Fila 51 en k=5 (~16h/k); cola continúa automáticamente |
-| 22 nodos | QNodos     |  8 / 50           | Cola encadenada; arranca automáticamente al terminar 20A |
-| 22 nodos | Geometric  |  2 / 50           | Arranca automáticamente al terminar Geometric 20A |
-| 25 nodos | QNodos     |  0 / 50           | Encadenado tras 22A QNodos |
-| 25 nodos | Geometric  |  0 / 50           | Encadenado tras 22A Geometric |
+| 20 nodos | QNodos     | 49 / 50           | Completado (fila 6 fue la última) |
+| 20 nodos | Geometric  | ~10 / 50          | Filas n_max≤17 completas; n_max=19–20 excluidas por restricción de tiempo |
+| 22 nodos | QNodos     | ~40 / 50          | En curso; filas n_max=21 toman 7–10h/k |
+| 22 nodos | Geometric  | 10 / 50           | Bloqueada en fila 55 (n_max=19, k=3 ~55h) |
+| 25 nodos | QNodos     |  0 / 7 (selección) | Selección representativa encadenada; arranca al terminar 22A |
+| 25 nodos | Geometric  |  0 / 3 (selección) | Selección representativa encadenada; arranca al terminar 22A Geo |
+
+> Las pruebas de 25A usan una **selección representativa** en lugar de la cola completa:
+> QNodos corre 7 filas (n_max=12, 13×2, 17×3, 21) y Geometric corre 3 filas (n_max=12, 13, 17).
+> Los datos faltantes de 20A Geometric y las filas 22A pendientes se documentan como
+> limitación de tiempo de cómputo; no se infieren.
 
 ### Ejecución de los experimentos
 
@@ -479,6 +484,18 @@ nohup bash run_qnodos_cola.sh > /tmp/qnodos_cola_master.log 2>&1 &
 - Filas con mec=24 (QNodos k=3): ~37 min. Geometric k=3: ~16 h.
 - Se usa `mmap_mode="r"` para compartir la TPM (~3 GB para N25A) entre procesos.
 - Variables `OMP_NUM_THREADS=1` y `OPENBLAS_NUM_THREADS=1` evitan la explosión de hilos de OpenBLAS.
+
+### Optimizaciones aplicadas (sin pérdida de calidad)
+
+| Módulo | Optimización | Impacto |
+|--------|-------------|---------|
+| `geometric.py` | DP hipercubo vectorizado con numpy (popcount-ordered) | ~100× menos overhead Python para n=15 |
+| `geometric.py` | `_conductancias_geometrica()` vectorizada con `np.moveaxis` | 10–100× en Fiedler para n≥6 |
+| `q_nodos.py` | SA termina si EMD=0 en estado inicial o por temperatura | Elimina ~1440 evaluaciones redundantes |
+| `q_nodos.py` | Multi-start termina si EMD=0 (ahorra hasta 7 de 8 runs) | Hasta 8× menos trabajo en casos triviales |
+| `k_particion_buscador.py` | `_recocido`, `_multi_recocido`, `refinar_local` con early exit EMD=0 | Aplica a k=3,4,5 en ambos algoritmos |
+| `sistema.py` | `distribucion_marginal()` con `np.empty` (pre-alloc) | Reduce overhead en hot path (millones de llamadas) |
+| `ncubo.py` | `marginalizar()` usa sets Python en vez de `np.intersect1d` | 11–23× más rápido para arrays pequeños (mec típico 10–25) |
 
 ---
 
