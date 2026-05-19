@@ -1,5 +1,5 @@
 """QNodos para UNA fila de 25A-Elementos. Lanzar varias instancias con &"""
-import sys, time, gc, argparse
+import sys, time, gc, argparse, os, json, random
 import numpy as np
 import openpyxl
 
@@ -67,7 +67,9 @@ FILAS = {
     55: ("ACDEFGHIJKLMNOPQRSTVX",     "ACDEFGHIJKLMNOPQRSTVX"),
 }
 
-LOCK = EXCEL + ".lock"
+LOCK       = EXCEL + ".lock"
+MEC_CACHE  = "/tmp/mec_cache_25A.json"
+LOCK_CACHE = MEC_CACHE + ".lock"
 
 def to_mask(sub):
     return "".join("1" if c in sub else "0" for c in SISTEMA)
@@ -98,8 +100,38 @@ def guardar_k(fila_idx, k, part, perd, elapsed):
         except FileNotFoundError:
             pass
 
+def _actualizar_cache(mec_key: str, k: int, perdida: float, fila_idx: int) -> None:
+    """Guarda resultado de fila referencia (alc<=mec) en cache para reutilizar en filas con alc>mec."""
+    for _ in range(10):
+        try:
+            fd = os.open(LOCK_CACHE, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            os.close(fd)
+            break
+        except FileExistsError:
+            time.sleep(random.uniform(0.5, 1.5))
+    else:
+        return
+    try:
+        cache_data: dict = {}
+        if os.path.exists(MEC_CACHE):
+            try:
+                with open(MEC_CACHE) as f:
+                    cache_data = json.load(f)
+            except Exception:
+                pass
+        if mec_key not in cache_data:
+            cache_data[mec_key] = {}
+        cache_data[mec_key][str(k)] = {"perdida": perdida, "source": fila_idx}
+        with open(MEC_CACHE, "w") as f:
+            json.dump(cache_data, f)
+    finally:
+        try:
+            os.unlink(LOCK_CACHE)
+        except FileNotFoundError:
+            pass
+
+
 if __name__ == "__main__":
-    import os
     os.environ.setdefault("OMP_NUM_THREADS", "1")
     os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
 
@@ -109,6 +141,45 @@ if __name__ == "__main__":
     args = parser.parse_args()
     fila_idx = args.fila
     alc_letras, mec_letras = FILAS[fila_idx]
+
+    # --- Mec-cache: mismo mec + alc_n > mec_n → perdida idéntica (empíricamente verificado)
+    mec_key    = "".join(sorted(mec_letras))
+    alc_n_val  = len(alc_letras)
+    mec_n_val  = len(mec_letras)
+    es_referencia = (alc_n_val <= mec_n_val)
+
+    if alc_n_val > mec_n_val:
+        cache_data: dict = {}
+        if os.path.exists(MEC_CACHE):
+            try:
+                with open(MEC_CACHE) as _cf:
+                    cache_data = json.load(_cf)
+            except Exception:
+                pass
+        ks_req = [k for k in (2, 3, 4, 5) if k >= args.start_k]
+        mec_entry = cache_data.get(mec_key, {})
+        if all(str(k) in mec_entry for k in ks_req):
+            print(
+                f"[fila={fila_idx}] CACHE HIT mec={mec_letras[:14]}... "
+                f"alc_n={alc_n_val} > mec_n={mec_n_val} → reutilizando perdida",
+                flush=True,
+            )
+            for k in ks_req:
+                entry = mec_entry[str(k)]
+                perd  = entry["perdida"]
+                src   = entry["source"]
+                part  = f"CACHE:fila{src}"
+                print(f"  [fila={fila_idx} k={k}] perdida={round(perd,6)} (cache de fila {src})", flush=True)
+                guardar_k(fila_idx, k, part, perd, 0.0)
+                print(f"  [fila={fila_idx} k={k}] GUARDADO (cache)", flush=True)
+            print(f"  [fila={fila_idx}] COMPLETO (cache, 0s)", flush=True)
+            sys.exit(0)
+        print(
+            f"[fila={fila_idx}] alc_n={alc_n_val} > mec_n={mec_n_val} pero cache vacío "
+            f"para mec={mec_letras[:14]}... → ejecutando normal",
+            flush=True,
+        )
+    # -------------------------------------------------------------------------
 
     mec_n = len(mec_letras)
     if mec_n <= 13:
@@ -148,6 +219,8 @@ if __name__ == "__main__":
         print(f"  [fila={fila_idx} k={k}] perdida={round(perd,6)} t={round(elapsed,2)}s", flush=True)
         guardar_k(fila_idx, k, part, perd, elapsed)
         print(f"  [fila={fila_idx} k={k}] GUARDADO", flush=True)
+        if es_referencia:
+            _actualizar_cache(mec_key, k, perd, fila_idx)
         gc.collect()
 
     total = round(time.perf_counter() - t_fila, 1)
