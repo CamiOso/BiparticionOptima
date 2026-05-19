@@ -59,5 +59,5 @@ done
 
 echo "[QNODOS-22A] TODAS LAS FILAS COMPLETADAS — $(date)"
 
-echo "[QNODOS-22A] Lanzando cola 25A..."
-bash run_qnodos_cola_25A.sh > /tmp/qnodos25_cola_master.log 2>&1
+echo "[QNODOS-22A] Lanzando seleccion 25A..."
+bash run_qnodos_cola_25A_seleccion.sh > /tmp/qnodos25_cola_master.log 2>&1

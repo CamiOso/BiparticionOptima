@@ -61,5 +61,5 @@ done
 
 echo "[GEO-22A] TODAS LAS FILAS COMPLETADAS — $(date)"
 
-echo "[GEO-22A] Lanzando cola 25A..."
-bash run_geo_cola_25A.sh > /tmp/geo25_cola_master.log 2>&1
+echo "[GEO-22A] Lanzando seleccion 25A..."
+bash run_geo_cola_25A_seleccion.sh > /tmp/geo25_cola_master.log 2>&1

@@ -220,6 +220,10 @@ class QNodos(SIA):
         mejor_perdida = actual_perdida
         mejor_dist = actual_dist
 
+        if mejor_perdida <= 1e-12:
+            clave_sa = tuple(sorted(mejor_a, key=lambda v: (v[0], v[1])))
+            return clave_sa, mejor_perdida, mejor_dist
+
         rng = np.random.default_rng(aplicacion.semilla_numpy + len(vertices))
         temp = temp_inicial
 
@@ -248,6 +252,8 @@ class QNodos(SIA):
                         mejor_a = frozenset(actual_a)
                         mejor_dist = actual_dist
             temp *= factor
+            if mejor_perdida <= 1e-12:
+                break
 
         clave_sa = tuple(sorted(mejor_a, key=lambda v: (v[0], v[1])))
         return clave_sa, mejor_perdida, mejor_dist
@@ -289,6 +295,8 @@ class QNodos(SIA):
             except Exception:
                 pass
             self.memoria_grupo_candidato = mem_prev
+            if mejor_perdida <= 1e-12:
+                break
 
         self.memoria_grupo_candidato.update(mem_candidato_global)
         if mejor_clave is None:

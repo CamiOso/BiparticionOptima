@@ -113,6 +113,21 @@ if __name__ == "__main__":
     fila_idx = args.fila
     alc_letras, mec_letras = FILAS[fila_idx]
 
+    mec_n = len(mec_letras)
+    if mec_n <= 13:
+        _cn, _cs = 512, 1024
+    elif mec_n <= 17:
+        _cn, _cs = 128, 512
+    elif mec_n <= 20:
+        _cn, _cs = 64, 256
+    else:
+        _cn, _cs = 32, 128
+    import src.modelos.nucleo.ncubo   as _ncubo_mod
+    import src.modelos.nucleo.sistema as _sistema_mod
+    _ncubo_mod._MAX_MEMO_NCUBE   = _cn
+    _sistema_mod._MAX_MEMO_SISTEMA = _cs
+    print(f"[fila={fila_idx}] cache ncube={_cn} sistema={_cs} (mec={mec_n})", flush=True)
+
     from src.strategies.geometric import Geometric
     print(f"[fila={fila_idx}] Cargando TPM...", flush=True)
     tpm = np.load(CSV)

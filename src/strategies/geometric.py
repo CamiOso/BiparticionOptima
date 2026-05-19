@@ -991,26 +991,10 @@ class Geometric(SIA):
                 if j_orig not in idx:
                     continue
                 jj = idx[j_orig]
-                otras = [d for d in range(nd) if d != pos]
-                otras_sizes = [data.shape[d] for d in otras]
-                n_otras = max(1, int(np.prod(otras_sizes)) if otras_sizes else 1)
-                total = 0.0
-                for estado_idx in range(n_otras):
-                    idx_otras: list[int] = []
-                    temp = estado_idx
-                    for s in reversed(otras_sizes):
-                        idx_otras.append(temp % s)
-                        temp //= s
-                    idx_otras = list(reversed(idx_otras))
-                    idx_0 = [0] * nd
-                    idx_1 = [0] * nd
-                    idx_0[pos] = 0
-                    idx_1[pos] = 1
-                    for k_ot, d_ot in enumerate(otras):
-                        idx_0[d_ot] = idx_otras[k_ot]
-                        idx_1[d_ot] = idx_otras[k_ot]
-                    total += abs(float(data[tuple(idx_0)]) - float(data[tuple(idx_1)]))
-                W[ii][jj] = total / n_otras
+                # Mover eje pos al frente y calcular diferencia absoluta media
+                # vectorizada. Semanticamente identico al bucle Python original.
+                _d = np.moveaxis(data, pos, 0)
+                W[ii][jj] = float(np.mean(np.abs(_d[0] - _d[1])))
         return W
 
     def _candidatos_fiedler(
