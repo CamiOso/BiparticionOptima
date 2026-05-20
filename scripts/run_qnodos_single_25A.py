@@ -146,7 +146,7 @@ if __name__ == "__main__":
     mec_key    = "".join(sorted(mec_letras))
     alc_n_val  = len(alc_letras)
     mec_n_val  = len(mec_letras)
-    es_referencia = (alc_n_val <= mec_n_val)
+    es_referencia = (alc_n_val > mec_n_val)  # solo beneficiarias poblan el cache
 
     if alc_n_val > mec_n_val:
         cache_data: dict = {}
