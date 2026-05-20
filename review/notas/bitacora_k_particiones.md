@@ -2318,3 +2318,77 @@ Se creó `scripts/analisis_comparativo_25A.py` que produce:
   - `comparacion_Q_vs_G_k2.png`: scatter y barras de pérdida
   - `mip_confirmacion_k2.png`: curvas φ vs k por fila
 
+
+---
+
+## Parte 24 — Conclusiones y análisis final del proyecto
+
+### 24.1 ¿Son necesarias las k-particiones (k>2)?
+
+**Respuesta: NO, para el propósito de IIT no son necesarias.**
+
+El hallazgo empírico de la Parte 22 es contundente: en **19/19 filas** de 22A y 25A, **k=2 siempre da la pérdida mínima** sobre k=3,4,5. Los ratios k3/k2 van de 1.3× hasta 1647× (mediana 171×). Esto es consistente con la teoría de IIT: la MIP (Minimum Information Partition) es por definición una bipartición.
+
+**Implicación práctica:** Para calcular φ solo necesitas k=2. Las k-particiones son un problema académico interesante pero irrelevante para el objetivo central de IIT.
+
+### 24.2 Estado del arte de las estrategias
+
+Basado en los benchmarks de las Partes 14, 17 y 18:
+
+| Estrategia | k=2 (MIP) | k>2 | Escalabilidad |
+|------------|-----------|-----|---------------|
+| **QNodos** | Exacto (Queyranne + SA multi-start) | Exacto (recursión submodular + SA) | O(n³) — el mejor |
+| **Geometric** | Exacto (hipercubo + Fiedler) | Brecha ~720% | O(n·2ⁿ) — peor que QNodos |
+| **Circuito** | ~15% gap (espectral) | Brecha ~720% | O(n³) — rápido pero impreciso |
+| **REMCMC** | Exacto (Parallel Tempering) | Usa k_bipartir | O(R·rondas·eval) |
+| **FuerzaBruta** | Exacto (referencia) | Exacto | O(2^(2n)) — inviable n>7 |
+| **Louvain/IB/GA/BP** | Brecha >700% | — | Rápidas pero no optimizan φ |
+
+**Conclusión:** QNodos es la estrategia ganadora — exacto para k=2 y k>2, escalable O(n³), y el único que aprovecha la submodularidad de la función de pérdida.
+
+### 24.3 El cuello de botella fundamental: la TPM
+
+El problema de escalabilidad no es algorítmico, es la TPM. Para n=32, la TPM ocupa ~1 TB. Las optimizaciones aplicadas en este proyecto ya exprimieron al máximo el hardware disponible:
+
+- Vectorización del DP del hipercubo (~100×)
+- Early exit en SA cuando EMD=0
+- Multi-start MAO con 8 rotaciones
+- Candidatos Fiedler como complemento ortogonal
+- REMCMC con Parallel Tempering
+- Partición Variacional con operador de Airy
+- Partición Hiperbólica con geodésicas de Poincaré
+
+### 24.4 Recomendaciones para escalar
+
+#### A corto plazo (n ≤ 100)
+1. QNodos es la estrategia definitiva para k=2. Descartar k>2.
+2. **Coarse-graining espectral**: agrupar nodos en super-nodos usando el Laplaciano de conductancias, luego aplicar QNodos sobre los meta-nodos.
+3. **Muestreo de TPM**: usar muestras de trayectorias en lugar de la TPM completa (2ⁿ × n).
+
+#### A mediano plazo (n ≤ 10⁶)
+4. **Aproximación de Queyranne con sketching**: la función submodular f(S) = EMD(…) puede aproximarse con técnicas de Nyström o random Fourier features, reduciendo O(n³) a O(n·log n).
+5. **Descomposición en bloques**: particionar el grafo de conductancias con Louvain O(n·log n), luego aplicar QNodos dentro de cada bloque.
+
+#### A largo plazo
+6. **IIT 4.0** (Albantakis et al. 2023): cambia EMD por Jensen-Shannon y opera sobre la Estructura Causa-Efecto (CES). Requiere rediseño completo pero es la dirección correcta.
+7. **Modelos generativos profundos**: usar VAEs o normalizing flows para aprender la distribución de estados en un espacio latente de baja dimensión y calcular φ ahí.
+8. **Redes tensoriales**: para sistemas del tamaño del cerebro, la integración de información podría ser aproximable mediante medidas de entrelazamiento en MPS/PEPS, que escalan polinomialmente con el tamaño del sistema.
+
+---
+
+## Cierre del proyecto de pruebas
+
+**Fecha de cierre:** 2026-05-20
+
+La etapa experimental del proyecto concluye con los datos de las hojas 22A y 25A del archivo `DatosPruebas2026_1.xlsx`. Los datos quedan disponibles para análisis futuros:
+
+- **`DatosPruebas2026_1.xlsx`**: resultados de φ para k=2,3,4,5 con QNodos y Geometric, tiempos de cómputo, y particiones MIP explícitas.
+- **`resultados_25A/`**: gráficas comparativas QNodos vs Geometric y confirmación k=2=MIP.
+- **`scripts/analisis_comparativo_25A.py`**: script reutilizable para reproducir el análisis comparativo desde el Excel.
+- **`review/notas/bitacora_k_particiones.md`** (este archivo): registro completo de metodología, decisiones, hallazgos y problemas a lo largo de las 24 partes del proyecto.
+
+**Hallazgos clave reproducibles:**
+1. k=2 es siempre la MIP — no es necesario explorar k>2.
+2. QNodos y Geometric coinciden con r=1.0 en cómputos directos.
+3. QNodos es entre 5× y 13× más rápido que Geometric para los mismos mec_n.
+4. El cuello de botella para n≥18 no es algorítmico sino la memoria requerida por la TPM.
