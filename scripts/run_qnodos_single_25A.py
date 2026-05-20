@@ -138,6 +138,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("fila", type=int)
     parser.add_argument("--start-k", type=int, default=2, choices=[2, 3, 4, 5])
+    parser.add_argument("--end-k",   type=int, default=5, choices=[2, 3, 4, 5])
     args = parser.parse_args()
     fila_idx = args.fila
     alc_letras, mec_letras = FILAS[fila_idx]
@@ -198,16 +199,16 @@ if __name__ == "__main__":
 
     from src.estrategias.q_nodos import QNodos
     print(f"[fila={fila_idx}] Cargando TPM...", flush=True)
-    tpm = np.load(CSV, mmap_mode="r")
+    tpm = np.memmap(CSV, dtype=np.float32, mode="r", shape=(2**25, 25))
     qnodos = QNodos(tpm)
 
     alc_mask = to_mask(alc_letras)
     mec_mask = to_mask(mec_letras)
     n_max = max(len(alc_letras), len(mec_letras))
-    print(f"[fila={fila_idx}] n_max={n_max} | {alc_letras} / {mec_letras} | start_k={args.start_k}", flush=True)
+    print(f"[fila={fila_idx}] n_max={n_max} | {alc_letras} / {mec_letras} | start_k={args.start_k} end_k={args.end_k}", flush=True)
 
     t_fila = time.perf_counter()
-    for k in (k for k in (2, 3, 4, 5) if k >= args.start_k):
+    for k in (k for k in (2, 3, 4, 5) if args.start_k <= k <= args.end_k):
         t0 = time.perf_counter()
         res = qnodos.aplicar_estrategia(
             estado_inicial=ESTADO, condicion=CONDICION,
