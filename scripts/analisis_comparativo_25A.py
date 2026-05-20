@@ -75,25 +75,46 @@ print(f"\n  QNodos k=2 es MIP: {sum(mip_check_q)}/{len(mip_check_q)} = {pct_q:.1
 print(f"  Geo    k=2 es MIP: {sum(mip_check_g)}/{len(mip_check_g)} = {pct_g:.1f}%")
 
 # ── 2. Comparación perdida Q vs G en k=2 ─────────────────────────────────────
+# Identificar filas cuyo QNodos vino de cache (tiempo=0) vs computación directa
 print("\n=== 2. Acuerdo QNodos vs Geometric (k=2) ===")
 filas_ambos = [(f, d) for f, d in sorted(data.items()) if d["q2"] is not None and d["g2"] is not None]
-q_vals = np.array([d["q2"] for _, d in filas_ambos])
-g_vals = np.array([d["g2"] for _, d in filas_ambos])
 
-if len(q_vals) >= 2:
-    r = np.corrcoef(q_vals, g_vals)[0, 1]
-    abs_diffs = np.abs(q_vals - g_vals)
-    rel_errs  = abs_diffs / np.maximum(q_vals, 1e-12)
-    exact_match = np.sum(abs_diffs < 1e-6)
-    print(f"  Filas con ambos resultados k=2: {len(q_vals)}")
-    print(f"  Pearson r(Q,G): {r:.6f}")
-    print(f"  Error relativo medio: {np.mean(rel_errs)*100:.4f}%")
-    print(f"  Error relativo max:   {np.max(rel_errs)*100:.4f}%")
-    print(f"  Acuerdo exacto (|Q-G|<1e-6): {exact_match}/{len(q_vals)} = {100*exact_match/len(q_vals):.1f}%")
-    for (f, d), q, g, re in zip(filas_ambos, q_vals, g_vals, rel_errs):
-        print(f"    fila {f:>2} mec={d['mec_n']:>2}: Q={q:.8f}  G={g:.8f}  err_rel={re*100:.4f}%")
-else:
-    print("  Insuficientes datos para correlación (necesita ≥2 filas con ambos resultados)")
+# Separar: directo (q2t > 0) vs cache (q2t == 0 o None)
+filas_directas  = [(f, d) for f, d in filas_ambos if d["q2t"] and d["q2t"] > 1.0]
+filas_cache     = [(f, d) for f, d in filas_ambos if not d["q2t"] or d["q2t"] <= 1.0]
+
+def stats(pares, label):
+    if len(pares) < 2:
+        print(f"  [{label}] Solo {len(pares)} fila(s) — insuficiente para correlación")
+        for f, d in pares:
+            q, g = d["q2"], d["g2"]
+            re = abs(q-g)/max(q, 1e-12)
+            print(f"    fila {f:>2} mec={d['mec_n']:>2}: Q={q:.8f}  G={g:.8f}  err_rel={re*100:.4f}%")
+        return
+    q_arr = np.array([d["q2"] for _, d in pares])
+    g_arr = np.array([d["g2"] for _, d in pares])
+    r = np.corrcoef(q_arr, g_arr)[0, 1]
+    diffs = np.abs(q_arr - g_arr)
+    rel   = diffs / np.maximum(q_arr, 1e-12)
+    exact = np.sum(diffs < 1e-6)
+    print(f"  [{label}] n={len(pares)}  Pearson r={r:.6f}  err_rel_medio={np.mean(rel)*100:.4f}%  acuerdo_exacto={exact}/{len(pares)}")
+    for (f, d), q, g, re in zip(pares, q_arr, g_arr, rel):
+        flag = "  ⚠ DISCREPANCIA" if re > 0.01 else ""
+        print(f"    fila {f:>2} mec={d['mec_n']:>2}: Q={q:.8f}  G={g:.8f}  err_rel={re*100:.4f}%{flag}")
+
+stats(filas_directas, "QNodos computado directamente")
+print()
+stats(filas_cache,    "QNodos desde cache (posible error de suposición)")
+
+if filas_cache:
+    print()
+    print("  NOTA: filas con QNodos desde cache asumen perdida idéntica para mismo mec con")
+    print("  distinto alc. Si Geometric discrepa, la suposición de cache puede ser incorrecta.")
+    print("  Recomendación: recomputar esas filas directamente para validar.")
+
+# Para gráficas usar solo directas
+q_vals = np.array([d["q2"] for _, d in filas_directas]) if filas_directas else np.array([])
+g_vals = np.array([d["g2"] for _, d in filas_directas]) if filas_directas else np.array([])
 
 # ── 3. Tiempos Q vs G ─────────────────────────────────────────────────────────
 print("\n=== 3. Tiempos de cómputo k=2 ===")
@@ -118,13 +139,14 @@ if len(q_vals) >= 2:
         ax.annotate(str(f), (q, g), fontsize=7, xytext=(3, 3), textcoords="offset points")
     ax.set_xlabel("QNodos φ (k=2)")
     ax.set_ylabel("Geometric φ (k=2)")
-    ax.set_title(f"Pérdida mínima: QNodos vs Geometric\nPearson r = {r:.4f}")
+    r_direct = np.corrcoef(q_vals, g_vals)[0, 1] if len(q_vals) >= 2 else float('nan')
+    ax.set_title(f"Pérdida mínima: QNodos vs Geometric (directo)\nPearson r = {r_direct:.4f}")
     ax.legend()
     ax.grid(True, alpha=0.3)
 
-    # Bar: k=2 pérdida por fila comparando Q y G
+    # Bar: k=2 pérdida por fila comparando Q y G (solo directas)
     ax = axes[1]
-    filas_idx = [f for f, _ in filas_ambos]
+    filas_idx = [f for f, _ in filas_directas]
     x = np.arange(len(filas_idx))
     w = 0.35
     ax.bar(x - w/2, q_vals, w, label="QNodos", color="steelblue")

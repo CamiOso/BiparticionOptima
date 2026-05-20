@@ -2222,3 +2222,99 @@ tpm = np.load(CSV, mmap_mode="r")
 # Después (correcto)
 tpm = np.memmap(CSV, dtype=np.float32, mode="r", shape=(2**25, 25))
 ```
+
+---
+
+## Parte 23 — Pruebas 25A: QNodos vs Geometric, comparación completa (2026-05-20)
+
+### 23.1 Contexto
+
+Con el hallazgo de la Parte 22 (k=2 = MIP) confirmado, la Parte 23 se enfoca
+en ejecutar y comparar las dos estrategias implementadas sobre el dataset 25A
+(sistema de 25 nodos, TPM de 3.2 GB) para filas viables (mec ≤ 17).
+
+**Estrategias comparadas:**
+- **QNodos**: Queyranne O(N³) + N-cube + EMD.
+- **Geometric**: Mapeo hipercúbico O(n·2ⁿ), función de costo por distancia Hamming.
+
+### 23.2 Filas ejecutadas y resultados
+
+| Fila | alc_n | mec_n | Q_k2     | G_k2     | Acuerdo | Q_t (s) | G_t (s) | G/Q  |
+|------|-------|-------|----------|----------|---------|---------|---------|------|
+| 38   | 17    | 17    | 0.000969 | 0.000969 | exacto  | 824     | 2738    | 3.3x |
+| 39   | 17    | 13    | 0.000076 | 0.000076 | exacto  | 172     | 1154    | 6.7x |
+| 46   | 13    | 13    | 0.000073 | 0.000073 | exacto  | 269     | 255     | 0.95x|
+| 54   | 12    | 12    | 0.000036 | 0.000036 | exacto  | 237     | 233     | 0.98x|
+| 40   | 17    | 12    | 0.000089*| 0.000054 | ⚠ 39%  | —*      | 919     | —    |
+
+*Fila 40 QNodos: valor obtenido por mec-cache (no cómputo directo). Discrepancia bajo investigación.
+
+### 23.3 Hallazgos clave
+
+**1. Acuerdo perfecto en filas computadas directamente**
+
+Para las 4 filas donde QNodos se computó directamente (sin cache):
+- **Pearson r = 1.000000**
+- **Error relativo medio = 0.0000%**
+- **Acuerdo exacto: 4/4 (100%)**
+
+Geometric reproduce exactamente la pérdida MIP de QNodos en todos los casos directos.
+
+**2. k=2 = MIP extendido a mec=17**
+
+La Parte 22 confirmó k=2=MIP para mec=11–15. En esta etapa se extendió a mec=17:
+
+| Estrategia | Casos verificados | k=2=MIP |
+|-----------|-------------------|---------|
+| QNodos    | 8/8               | 100%    |
+| Geometric | 3/3               | 100%    |
+
+Ratio k3/k2 en 25A: mínimo 62x (fila 38 Geo), máximo 513x (fila 54 QNodos).
+
+**3. Escalabilidad: QNodos es más rápido para alc ≠ mec**
+
+Para sistemas simétricos (alc = mec), ambas estrategias tardan lo mismo.
+Para sistemas asimétricos (alc > mec), Geometric escala peor con alc grande:
+- mec=13, alc=17: Geometric toma 6.7x más que QNodos
+- mec=17, alc=17: Geometric toma 3.3x más que QNodos
+
+**4. Alerta de cache QNodos: suposición no verificada para N=25**
+
+El mec-cache de QNodos asume que filas con mismo mec y alc > mec producen
+la misma pérdida. En fila 40 (alc=17, mec=12), el cache devolvió 0.000089
+(de fila 47, alc=13) pero Geometric calculó 0.000054 (39% de diferencia).
+
+Posible causa: la suposición es empíricamente correcta para sistemas más
+pequeños pero puede fallar en N=25 por el efecto del estado inicial sobre
+subsistemas con alcances muy distintos.
+
+**Recomendación:** verificar con cómputo directo de fila 40 QNodos antes de
+incluir ese dato en el análisis final.
+
+### 23.4 Problemas encontrados y soluciones
+
+| Problema | Causa | Solución |
+|----------|-------|----------|
+| Lock Excel huérfano | Proceso geo38 crasheó mid-save al guardar k=3 | `rm xlsx.lock`, guardado manual del resultado |
+| Scripts k2 fallaban con `--start-k` vacío | Bug bash: `local` con múltiples asignaciones evalúa todos los RHS antes de asignar | Separar cada `local` a su propia línea |
+| Swap al 100% (SwapFree=24KB) | 8 procesos Python con memmap 3.2 GB simultáneos | Agregar swapfile de 8 GB (`/swap/swap2`) |
+| Entradas `CACHE:filaXX` en Excel | mec-cache guarda referencia en lugar de partición real | Script de reemplazo post-ejecución |
+
+### 23.5 Filas no completadas (inviables en este equipo)
+
+| Grupo | Razón | Tiempo estimado |
+|-------|-------|----------------|
+| mec ≥ 18 (mayoría de filas 6–52) | 2^18+ estados → días por fila | Inviable |
+| mec=21, fila 55 (QNodos, 4.5h sin resultado) | N=21 fuera del rango práctico del equipo | Cancelado |
+| Geo filas alc=25 con mec pequeño (1h40m sin resultado) | alc=25 → acceso a 2^25=33M filas del TPM | Cancelado |
+
+### 23.6 Script de análisis
+
+Se creó `scripts/analisis_comparativo_25A.py` que produce:
+- Verificación k=2=MIP para todas las filas disponibles
+- Pearson r entre QNodos y Geometric (separando resultados directos vs cache)
+- Tabla de tiempos y speedup G/Q por mec_n
+- Gráficas en `resultados_25A/`:
+  - `comparacion_Q_vs_G_k2.png`: scatter y barras de pérdida
+  - `mip_confirmacion_k2.png`: curvas φ vs k por fila
+
