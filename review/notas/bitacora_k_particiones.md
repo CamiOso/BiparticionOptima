@@ -2147,3 +2147,78 @@ Total: 50  H==FB: 20/50 (40%)  H<QN: 0
 - `n_total > 14`: SA multi-arranque (8 cadenas) + expansión Hamming radio 3 → reduce el gap significativamente.
 
 La combinación teórica ideal sería usar `ParticionHiperbolica` para generar el punto de partida del SA en `BranchBound`, aprovechando la geometría hiperbólica para mejorar la inicialización.
+
+---
+
+## Parte 22 — Hallazgo empírico: k=2 es siempre el mínimo φ (2026-05-20)
+
+### 22.1 Observación
+
+Al analizar los resultados de 22A (mec=11, 15) y 25A (mec=12, 13) se detectó
+un patrón consistente en **19/19 filas** sin excepción:
+
+> **La bipartición (k=2) siempre da la perdida mínima sobre todas las k-particiones.**
+
+### 22.2 Datos
+
+| Dataset | fila | mec | k=2        | k=3        | k=4        | k=5        | ratio k3/k2 |
+|---------|------|-----|------------|------------|------------|------------|-------------|
+| 22A     | 54   | 11  | 0.000053   | 0.019400   | 0.049520   | 0.051560   | 366x        |
+| 22A     | 46   | 11  | 0.000870   | 0.007138   | 0.034015   | 0.034141   | 8x          |
+| 22A     | 53   | 11  | 0.000216   | 0.023123   | 0.025615   | 0.029065   | 107x        |
+| 22A     | 40   | 11  | 0.000053   | 0.062771   | 0.072978   | 0.079493   | 1184x       |
+| 22A     | 39   | 11  | 0.000216   | 0.010788   | 0.051908   | 0.058197   | 50x         |
+| 22A     | 11   | 11  | 0.000216   | 0.055818   | 0.072648   | 0.077438   | 258x        |
+| 22A     | 47   | 11  | 0.000495   | 0.035662   | 0.047957   | 0.052012   | 72x         |
+| 22A     | 12   | 11  | 0.000053   | 0.087298   | 0.104700   | 0.095690   | 1647x       |
+| 22A     | 38   | 15  | 0.004802   | 0.134646   | 0.199275   | 0.190650   | 28x         |
+| 22A     | 44   | 15  | 0.003652   | 0.824926   | 1.027510   | 1.153640   | 226x        |
+| 22A     | 51   | 15  | 0.005021   | 0.565929   | 0.914210   | 1.158250   | 113x        |
+| 22A     | 43   | 15  | 0.020605   | 0.646964   | 1.573437   | 2.083981   | 31x         |
+| 22A     | 50   | 15  | 0.031947   | 0.200217   | 1.808531   | 2.019159   | 6x          |
+| 22A     | 49   | 15  | 0.043614   | 0.058653   | 0.501580   | 1.979740   | 1.3x        |
+| 22A     | 42   | 15  | 0.003574   | 0.611546   | 0.722600   | 0.798052   | 171x        |
+| 25A     | 54   | 12  | 0.000036   | 0.018470   | 0.020720   | 0.020419   | 513x        |
+| 25A     | 46   | 13  | 0.000073   | 0.027168   | 0.024940   | 0.030519   | 372x        |
+| 25A     | 47   | 12  | 0.000089   | 0.024190   | 0.028043   | 0.028540   | 272x        |
+| 25A     | 39   | 13  | 0.000076   | 0.033645   | 0.038810   | 0.039410   | 443x        |
+
+**Estadísticas del ratio k3/k2:** mínimo 1.3x · mediana 171x · máximo 1647x
+
+### 22.3 Justificación teórica
+
+Cada corte adicional (k>2) divide el sistema en más grupos, destruyendo más
+conexiones causales. La pérdida EMD crece monotónamente con el número de cortes
+en la mayoría de los sistemas reales. La bipartición (1 corte) minimiza la
+perturbación al sistema y por tanto da el φ mínimo.
+
+Esto es consistente con IIT: la MIP (Minimum Information Partition) es
+teóricamente una bipartición. Los resultados empíricos lo confirman
+en todos los sistemas estudiados (mec=11–15 para 22A, mec=12–13 para 25A).
+
+### 22.4 Implicación práctica: estrategia de dos pasadas
+
+Para filas con mec≥17 (cómputo muy costoso), se implementó una estrategia
+de dos pasadas:
+
+1. **Pasada 1** — solo k=2: obtiene φ_min en ~30% del tiempo total
+2. **Pasada 2** — k=3,4,5 diferida: completa el Excel cuando haya tiempo
+
+Implementado en `run_qnodos_cola_25A_seleccion.sh` (fila 55, mec=21) y
+mediante el nuevo flag `--end-k` en `scripts/run_qnodos_single_25A.py` y
+`scripts/run_geo_single_25A.py`.
+
+**Ahorro estimado para mec=21:** ~70% del tiempo de cómputo total.
+
+### 22.5 Fix relacionado: carga de N25A.npy
+
+`N25A.npy` no es formato NumPy estándar — es un array float32 binario raw
+(2^25 × 25 × 4 bytes = 3,355,443,200 bytes). Se corrigió:
+
+```python
+# Antes (falla con ValueError: pickled data)
+tpm = np.load(CSV, mmap_mode="r")
+
+# Después (correcto)
+tpm = np.memmap(CSV, dtype=np.float32, mode="r", shape=(2**25, 25))
+```
