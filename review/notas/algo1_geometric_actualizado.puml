@@ -1,0 +1,56 @@
+@startuml
+title Algoritmo 1 - Geometric K (versión actual)
+
+start
+
+:sia_preparar_subsistema()\n_tpm_a_tensores_elementales();
+
+:alcance_total, mecanismo_total\nnodos = sorted(alcance ∪ mecanismo);
+
+if (k > 2?) then (sí)
+
+  :_precalcular_busqueda_geometrica()\n→ costos_locales[mask] para todas las máscaras;
+
+  :Warm-start 1:\n_resolver_k_dendrograma(nodos, k)\n• raíz = todos los nodos\n• heap por pérdida del split\n• en cada paso: extraer componente con menor EMD\n  dividirlo → 2 hijos → agregar al heap\n• hasta tener k hojas;
+
+  if (dendrograma exitoso?) then (no)
+    :Warm-start 2 (fallback):\n_semilla_desde_biparticion()\n→ tomar máscara con menor costo local\n  como asignación inicial k grupos;
+  endif
+
+  :BuscadorKGeometric (DP + SA):\nbuscar_con_semilla(k, semilla)\n• evaluar_asignacion = k_bipartir\n• costos del hipercubo como hint DP\n• umbral_dp=12, umbral_exacto=5\n• T₀=1.0, T_f=0.001, α=0.92\n• max_restarts=20;
+
+  :Retornar Solucion(k-partición, perdida, fmt_k_particion_asignacion);
+
+else (no — k=2)
+
+  if (n_nodos ≤ 5 o modo STRICT?) then (sí — exacto)
+    :Enumerar todas las biparticiones propias\nevaluar EMD para cada una\npick min(perdida);
+
+  else (no — modo refinado)
+
+    :_precalcular_busqueda_geometrica():\n1. Seleccionar máscaras a evaluar\n   (si n≥9: muestreo 35% + esenciales\n    popcount 1, n-1, n/2; simetría)\n2. Evaluar costos locales en paralelo\n   (ThreadPoolExecutor si masks≥96)\n3. DP vectorizado por nivel de popcount:\n   costo[mask] = min_pred + 0.5·costo_local[mask]\n4. Seleccionar top-12 por costo DP\n   + top-12 por costo local\n   + hasta 32 candidatos costo-cero;
+
+    if (n_nodos ≥ 6?) then (sí)
+      :Candidatos Fiedler:\n_candidatos_fiedler()\n• W[i][j] = sensibilidad via diferencias finitas\n• L = diag(grado) - W_simétrica\n• vector de Fiedler = 2do autovector de L\n• 4 umbrales (percentil 0,25,50,75)\n→ hasta 4 candidatos adicionales;
+    endif
+
+    :Evaluar todos los candidatos\npick mejor (subalcance, submecanismo, perdida);
+
+    :Refinamiento local desacoplado\n(_refinar_local_desacoplado)\n• hasta 6 semillas del ranking\n• por cada semilla: explorar vecinos\n  (flip un nodo en alcance O mecanismo)\n• máx 24 iteraciones (hill-climbing);
+
+    if (brecha ≥ 0.10 y n_nodos ≥ 7?) then (sí — alta incertidumbre)
+      :Refinamiento adaptativo:\n• top-20 mejores por costo local\n• expandir vecindad (radio 1 y 2)\n• refinar hasta 40 iteraciones c/u;
+    endif
+
+    if (n_nodos ≥ 6 y pérdida > 0.05?) then (sí — posibles mínimos locales)
+      :Random restarts deterministas:\n20 semillas aleatorias (RNG fijo)\nrefinar cada una (40 iters)\nactualizar mejor si mejora;
+    endif
+
+  endif
+
+  :Retornar Solucion(bipartición, perdida, fmt_biparticion);
+
+endif
+
+stop
+@enduml

@@ -1,0 +1,48 @@
+@startuml
+title Algoritmo 2 - QNodos K (versión actual)
+
+start
+
+:sia_preparar_subsistema()\nconstruir vertices\n(presente t=0 + futuro t=1);
+
+if (k > 2?) then (sí)
+  :Limpiar cache_k_particiones;
+
+  :Warm-start 1:\n_k_particion_arbol_contracciones(vertices, k)\n→ correr exactamente n-k pasos Queyranne\n  (n-k fusiones más baratas)\n→ retorna asignación de k grupos;
+
+  if (warm-start 1 exitoso?) then (no)
+    :Warm-start 2 (fallback):\n_particionar_recursivo_q(vertices, k, memo)\n→ divide-y-vencerás con DP memoizado\n→ aplica algoritmo_q recursivamente\n  sobre subconjuntos;
+  endif
+
+  :BuscadorKQNodos (SA):\nbuscar_con_semilla(k, semilla)\n• evaluar_asignacion = k_bipartir_temporal\n• T₀=1.0, T_f=0.001, α=0.92, 30 pasos/T\n• cache de asignaciones;
+
+  :grupos = _grupos_desde_asignacion(resultado.asignacion, vertices);
+
+  :Retornar Solucion(k-partición, perdida, fmt_k_particion_q);
+
+else (no — k=2)
+
+  :MAO multi-start (n_starts=8):\npara i=0..7:\n  rotar vértice arranque (k = i·⌊n/8⌋ mod n)\n  ejecutar algoritmo_q(orden_rotado)\n  guardar si perdida < mejor_perdida\n  parar si perdida ≤ 1e-12;
+
+  note right
+    algoritmo_q = Queyranne MaxAdj Ordering:
+    • ciclo de n-1 contracciones
+    • cada paso: busca delta con min(f(δ∪Ω)-f(δ))
+    • early-exit si emd_delta=0
+    • fusionar ultimo_omega + pendant
+  end note
+
+  :SA sobre biparticiones (_sa_biparticion):\ncomenzar desde grupo_a = resultado MAO\nflips: mover un vértice A→B o B→A\nT₀=1.0, T_f=0.001, α=0.92, 30 pasos/T\ncriterio Metrópolis;
+
+  if (perdida_SA < perdida_MAO - 1e-9?) then (sí)
+    :usar partición SA como MIP;
+  else (no)
+    :usar partición MAO como MIP;
+  endif
+
+  :Retornar Solucion(bipartición, perdida_MIP, fmt_biparticion_q);
+
+endif
+
+stop
+@enduml
