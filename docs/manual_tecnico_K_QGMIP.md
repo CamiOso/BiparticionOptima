@@ -865,11 +865,35 @@ El crecimiento exponencial en el tamaño del mecanismo es evidente: de mec=15 a 
 
 ### 7.4 Análisis de resultados
 
-El resultado más notable es que KQNodes siempre encontró particiones de mejor calidad que KGeoMIP en los benchmarks comparativos. Esto se explica porque el árbol de contracciones de Queyranne tiene garantía teórica de optimalidad para funciones submodulares, mientras que el dendrograma geométrico es una heurística sin garantías formales.
+El resultado más notable es que KQNodes siempre encontró particiones de mejor calidad que KGeoMIP en los benchmarks comparativos de sistemas pequeños (n ≤ 6). Esto se explica porque el árbol de contracciones de Queyranne tiene garantía teórica de optimalidad para funciones submodulares, mientras que el dendrograma geométrico es una heurística sin garantías formales.
 
 Sin embargo, la diferencia de velocidad (10–100×) hace que KGeoMIP sea la opción práctica cuando se necesitan muchas evaluaciones rápidas o cuando se trabaja con n pequeño y el tiempo es el factor limitante.
 
 Para los experimentos en N25A con mec ≤ 17, el 100% de las filas directas tienen k=2 como MIP, lo que confirma que para sistemas con estructura modular fuerte la bipartición ya captura la integración fundamental y k > 2 no mejora el resultado.
+
+#### 7.4.1 Hallazgos extendidos al 2026-05-30 (21 casos reales, n=22 y n=25)
+
+Los experimentos extendidos sobre los datasets reales de 22A (22 nodos) y 25A (25 nodos) revelan resultados que complementan y matizan los benchmarks anteriores:
+
+**k=2 es siempre el MIP — 21/21 casos (18 en 22A, 3 en 25A).**
+Sin ninguna excepción, la partición mínima de pérdida de información es siempre una bipartición. Los ratios pérdida(k=3)/pérdida(k=2) van de 1× (empate) hasta valores muy superiores. Esto confirma que para el propósito de IIT calcular k>2 no aporta información adicional sobre la MIP.
+
+**Equivalencia de calidad entre KQNodes y KGeoMIP en k=2.**
+En los 18 casos de 22A con ambos algoritmos ejecutados, la pérdida encontrada es **idéntica en el 100%** (empate exacto). Para 25A, KGeoMIP es marginalmente mejor en 1/4 casos. KQNodes nunca supera a KGeoMIP en los datasets reales de mayor tamaño. Esto contrasta con los benchmarks de sistemas pequeños aleatorios donde KQNodes era superior — en sistemas reales de mayor escala ambos convergen al mismo óptimo.
+
+**Inversión del ganador en velocidad según tamaño del mecanismo.**
+
+| Sistema | mec | KQNodes k=2 | KGeoMIP k=2 | Más rápido |
+|---------|-----|------------|------------|------------|
+| 22A (22 nodos) | 11 | 48s | 211s | KQNodes 4.4× |
+| 22A (22 nodos) | 15 | 203s | 5922s | KQNodes 29× |
+| 25A (25 nodos) | 12 | 249s | 919s | KQNodes 3.7× |
+| 25A (25 nodos) | 17 | 3311s | 2738s | **KGeoMIP 1.2×** |
+
+Crecimiento al escalar mec=12→17 en 25A: KQNodes ×15, KGeoMIP ×3.9. Existe un **punto de cruce** alrededor de mec≈15-17 en sistemas de 25 nodos: KQNodes domina para mec pequeño, KGeoMIP domina para mec grande. La causa es que KQNodes tiene un término `O(2^mec)` en su caché bitmask que crece más rápido que el término adicional proporcional al mec en KGeoMIP, el cual ya paga un costo base fijo elevado por el alcance del sistema.
+
+**No-monotonicidad de la pérdida para k>2.**
+En 2/18 casos de 22A la secuencia de pérdidas no es monótona creciente con k (algún k intermedio obtiene menor pérdida que el k anterior). Esto indica que la SA no garantiza el óptimo global para k>2 en todos los casos. Sin embargo, k=2 sigue siendo el mínimo global en todos los casos, por lo que esta limitación no afecta la identificación correcta de la MIP.
 
 ### 7.5 Validación de correctitud
 

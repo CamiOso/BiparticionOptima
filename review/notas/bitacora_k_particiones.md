@@ -2376,6 +2376,58 @@ El problema de escalabilidad no es algorítmico, es la TPM. Para n=32, la TPM oc
 
 ---
 
+---
+
+## Parte 25 — Ampliación experimental y nuevos hallazgos (2026-05-30)
+
+### 25.1 Contexto
+
+Tras el cierre inicial del 2026-05-20 se continuaron las pruebas con filas pendientes del Excel `DatosPruebas2026_1.xlsx`, logrando mayor cobertura en las hojas 22A y 25A. Se desarrolló el script `run_geo_cola_completa.sh` para encadenar automáticamente todas las ejecuciones pendientes (mec=15 → mec=19 → mec=20 → mec=21 en 22A; mec=12,13,17 en 25A), incluyendo tanto Geo como QNodos para las filas nuevas de 25A.
+
+### 25.2 Nuevos resultados al 2026-05-30
+
+| Hoja | Celdas llenas | Cobertura |
+|------|--------------|-----------|
+| 22A-Elementos | 594 / 1176 | 50.5% |
+| 25A-Elementos | 161 / 1176 | 13.7% |
+
+Filas 22A completadas (Geo k=2..5): 9, 10, 11, 16, 17, 18, 24, 25, 31, 32, 37, 38, 39, 44, 45, 46 (mec=11 y mec=15).
+
+### 25.3 Hallazgos confirmados con mayor evidencia
+
+**k=2 siempre es el MIP — ahora 21/21 casos (18 en 22A + 3 en 25A).**
+Antes se tenían 16/16. Con las nuevas filas la evidencia es más sólida. Ningún caso en que k>2 dé menor pérdida.
+
+**QNodos y Geo encuentran pérdidas idénticas en 22A (18/18 empate exacto).**
+Ambos algoritmos convergen al mismo valor de pérdida en k=2 sin excepción para 22A. Para 25A: 3 empates y 1 caso donde Geo es marginalmente mejor. QNodos nunca supera a Geo en calidad.
+
+### 25.4 Hallazgo nuevo: inversión del ganador en escalado
+
+| Sistema | mec | QNodos k=2 | Geo k=2 | Ganador |
+|---------|-----|-----------|---------|---------|
+| 22A (22 nodos) | 11 | 48s | 211s | QNodos 4.4× |
+| 22A (22 nodos) | 15 | 203s | 5922s | QNodos 29× |
+| 25A (25 nodos) | 12 | 249s | 919s | QNodos 3.7× |
+| 25A (25 nodos) | 13 | 220s | 704s | QNodos 3.2× |
+| 25A (25 nodos) | 17 | 3311s | 2738s | **Geo 1.2×** |
+
+**Crecimiento al aumentar mec en 25A (mec=12→17):** QNodos crece ×15, Geo solo ×3.9.
+
+**Interpretación:** QNodos escala con `2^mec` (bitmask SA). Geo escala con el alcance (costo fijo grande) más un refinamiento SA proporcional al mec. En sistemas grandes (25 nodos), cuando mec crece, el `2^mec` de QNodos supera al costo marginal de Geo → punto de cruce alrededor de mec≈15-17 en sistemas de 25 nodos.
+
+### 25.5 Hallazgo nuevo: pérdida no siempre monótona
+
+En 2/18 casos de 22A la secuencia pérdida(k=2) ≤ pérdida(k=3) ≤ pérdida(k=4) ≤ pérdida(k=5) no se cumple (algún k intermedio obtiene pérdida menor que el k anterior). Esto indica que la SA no garantiza el óptimo global para k>2, aunque k=2 sigue siendo el mínimo global en todos los casos. Es una limitación de la heurística para k>2, no del resultado del MIP.
+
+### 25.6 Script de cola automática
+
+Se creó `run_geo_cola_completa.sh` con encadenamiento completo:
+- 22A: mec=15 (filas 24,31) → mec=19 (fila 55) → mec=20 (filas 9,16,23,30,37,44,51) → mec=21 Geo (filas 42,43,49,50)
+- 25A: mec=12 (filas 12,19,47,40,26,33) → mec=13 (filas 11,39,18,25,32,53) → mec=17 (filas 10,38,17,24,31,45,52)
+- Lanzado con `nohup`, independiente de VSCode y la terminal.
+
+---
+
 ## Cierre del proyecto de pruebas
 
 **Fecha de cierre:** 2026-05-20
