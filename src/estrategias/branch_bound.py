@@ -413,12 +413,32 @@ class BranchBound(SIA):
 
         yield from rec(0, [], -1)
 
+    @staticmethod
+    def _canonicalizar(asig: tuple[int, ...]) -> tuple[int, ...]:
+        """Forma canónica de una asignación: renumera grupos en orden de primera aparición.
+
+        (2,0,1,2,0) → (0,1,2,0,1)
+        Permite que particiones equivalentes con grupos renombrados compartan caché,
+        reduciendo evaluaciones hasta k! veces en la fase heurística.
+        """
+        mapa: dict[int, int] = {}
+        sig = 0
+        canon: list[int] = []
+        for g in asig:
+            if g not in mapa:
+                mapa[g] = sig
+                sig += 1
+            canon.append(mapa[g])
+        return tuple(canon)
+
     def _evaluar_k(
         self,
         asignacion: tuple[int, ...],
         vertices: list[tuple[int, int]],
     ) -> tuple[float, np.ndarray]:
-        en_cache = self._cache_k.get(asignacion)
+        # Canonicalizar antes del lookup: (2,0,1) == (0,1,2) → misma partición
+        canon = self._canonicalizar(asignacion)
+        en_cache = self._cache_k.get(canon)
         if en_cache is not None:
             return en_cache
 
@@ -426,13 +446,13 @@ class BranchBound(SIA):
         assert self.sia_dists_marginales is not None
 
         n = len(vertices)
-        k = max(asignacion) + 1
+        k = max(canon) + 1
 
         grupos_mec = [
             tuple(
                 vertices[i][1]
                 for i in range(n)
-                if asignacion[i] == g and vertices[i][0] == 0
+                if canon[i] == g and vertices[i][0] == 0
             )
             for g in range(k)
         ]
@@ -440,7 +460,7 @@ class BranchBound(SIA):
             tuple(
                 vertices[i][1]
                 for i in range(n)
-                if asignacion[i] == g and vertices[i][0] == 1
+                if canon[i] == g and vertices[i][0] == 1
             )
             for g in range(k)
         ]
@@ -453,7 +473,7 @@ class BranchBound(SIA):
             dist = dist_a
 
         perdida = float(self.distancia_metrica(self.sia_dists_marginales, dist))
-        self._cache_k[asignacion] = (perdida, dist)
+        self._cache_k[canon] = (perdida, dist)
         return perdida, dist
 
     def _fase_exacta_k(
@@ -474,6 +494,23 @@ class BranchBound(SIA):
                 mejor = _MejorK(perdida, dist, asig)
         return mejor
 
+    @staticmethod
+    def _asig_estructurada(
+        vertices: list[tuple[int, int]],
+        k: int,
+    ) -> list[int]:
+        """Warm-start determinista: asigna vértices a grupos por orden (tiempo, índice).
+
+        Ordena los vértices y los reparte en k grupos de tamaño ~igual.
+        Garantiza todos los grupos no vacíos y separa vértices "similares".
+        """
+        n = len(vertices)
+        orden = sorted(range(n), key=lambda i: (vertices[i][0], vertices[i][1]))
+        asig = [0] * n
+        for pos, idx in enumerate(orden):
+            asig[idx] = pos % k
+        return asig
+
     def _sa_run_k(
         self,
         vertices: list[tuple[int, int]],
@@ -481,16 +518,24 @@ class BranchBound(SIA):
         semilla_offset: int = 0,
         temp_inicial: float = 1.0,
         temp_final: float = 0.001,
+        asig_inicial: list[int] | None = None,
     ) -> _MejorK:
         n = len(vertices)
         rng = np.random.default_rng(42 + semilla_offset)
 
-        # Inicialización válida: todos los k grupos tienen al menos 1 elemento
-        base = list(range(k))
-        resto = list(rng.integers(0, k, size=max(0, n - k)).tolist())
-        asig = base + resto
-        rng.shuffle(asig)
-        asig = list(asig)
+        if asig_inicial is not None:
+            asig = list(asig_inicial)
+        else:
+            # Inicialización aleatoria válida: todos los k grupos tienen ≥1 elemento
+            base = list(range(k))
+            resto = list(rng.integers(0, k, size=max(0, n - k)).tolist())
+            asig = base + resto
+            rng.shuffle(asig)
+
+        # Contador de elementos por grupo — se mantiene incrementalmente
+        conteo = [0] * k
+        for g in asig:
+            conteo[g] += 1
 
         perdida, dist = self._evaluar_k(tuple(asig), vertices)
         mejor = _MejorK(perdida, dist, tuple(asig))
@@ -499,27 +544,51 @@ class BranchBound(SIA):
         temp = temp_inicial
 
         for _ in range(self.pasos_sa):
-            elem = int(rng.integers(n))
-            g_actual = asig[elem]
+            # 30% swap (intercambio entre dos grupos), 70% reassign (cambio de grupo)
+            if rng.random() < 0.3 and n >= 2:
+                # Swap: intercambia dos elementos de grupos distintos
+                i = int(rng.integers(n))
+                j = int(rng.integers(n))
+                if i == j or asig[i] == asig[j]:
+                    temp *= factor
+                    continue
+                gi, gj = asig[i], asig[j]
+                asig[i], asig[j] = gj, gi
+                # conteo no cambia en un swap
 
-            # No mover si es el único elemento del grupo (quedaría vacío)
-            if sum(1 for x in asig if x == g_actual) == 1:
-                temp *= factor
-                continue
-
-            opciones = [g for g in range(k) if g != g_actual]
-            g_nuevo = int(opciones[int(rng.integers(len(opciones)))])
-            asig[elem] = g_nuevo
-
-            nueva_p, nueva_d = self._evaluar_k(tuple(asig), vertices)
-            delta = nueva_p - perdida
-
-            if delta < 0 or rng.random() < math.exp(-delta / (temp + 1e-12)):
-                perdida, dist = nueva_p, nueva_d
-                if perdida < mejor.perdida:
-                    mejor = _MejorK(perdida, dist, tuple(asig))
+                nueva_p, nueva_d = self._evaluar_k(tuple(asig), vertices)
+                delta = nueva_p - perdida
+                if delta < 0 or rng.random() < math.exp(-delta / (temp + 1e-12)):
+                    perdida, dist = nueva_p, nueva_d
+                    if perdida < mejor.perdida:
+                        mejor = _MejorK(perdida, dist, tuple(asig))
+                else:
+                    asig[i], asig[j] = gi, gj  # revertir
             else:
-                asig[elem] = g_actual
+                # Reassign: mueve un elemento a otro grupo
+                elem = int(rng.integers(n))
+                g_actual = asig[elem]
+
+                if conteo[g_actual] == 1:
+                    temp *= factor
+                    continue
+
+                opciones = [g for g in range(k) if g != g_actual]
+                g_nuevo = int(opciones[int(rng.integers(len(opciones)))])
+                asig[elem] = g_nuevo
+                conteo[g_actual] -= 1
+                conteo[g_nuevo] += 1
+
+                nueva_p, nueva_d = self._evaluar_k(tuple(asig), vertices)
+                delta = nueva_p - perdida
+                if delta < 0 or rng.random() < math.exp(-delta / (temp + 1e-12)):
+                    perdida, dist = nueva_p, nueva_d
+                    if perdida < mejor.perdida:
+                        mejor = _MejorK(perdida, dist, tuple(asig))
+                else:
+                    asig[elem] = g_actual
+                    conteo[g_actual] += 1
+                    conteo[g_nuevo] -= 1
 
             temp *= factor
 
@@ -568,17 +637,26 @@ class BranchBound(SIA):
             asignacion=(0,) * n,
         )
 
-        # Multi-arranque SA con temperaturas escalonadas
-        for arranque in range(self.n_sa_arranques):
+        # Arranque 0: warm-start estructurado (orden tiempo/índice, round-robin)
+        warm = self._asig_estructurada(vertices, k)
+        resultado = self._sa_run_k(
+            vertices, k, semilla_offset=0,
+            temp_inicial=0.5,
+            asig_inicial=warm,
+        )
+        if resultado.perdida < mejor.perdida:
+            mejor = resultado
+
+        # Arranques 1..n_sa_arranques-1: inicialización aleatoria con temperatura escalonada
+        for arranque in range(1, self.n_sa_arranques):
             resultado = self._sa_run_k(
-                vertices, k, arranque,
+                vertices, k, semilla_offset=arranque,
                 temp_inicial=0.5 * (1.0 + arranque * 0.4),
             )
             if resultado.perdida < mejor.perdida:
                 mejor = resultado
 
         # Búsqueda exhaustiva del vecindario Hamming-1 desde el mejor SA
-        # (se repite dos veces como en el caso k=2)
         for _ in range(2):
             mejorado = False
             for asig_vec in self._vecindad_1_k(mejor.asignacion, n, k):
