@@ -201,6 +201,8 @@ class Circuito(SIA):
     # Circuitos causales (Johnson simplificado) y Laplaciano de hipergrafo
     # ------------------------------------------------------------------
 
+    _MAX_CIRCUITOS = 4000
+
     def _encontrar_circuitos(
         self,
         n: int,
@@ -211,7 +213,8 @@ class Circuito(SIA):
 
         Usa DFS con backtracking (equivalente al algoritmo de Johnson para
         grafos pequenos). Cada circuito tiene asociada su fuerza = producto
-        de los pesos de sus aristas. Limitado a n<=14 para tractabilidad.
+        de los pesos de sus aristas. Limitado a n<=14 y _MAX_CIRCUITOS para
+        evitar explosion combinatoria en grafos densos.
         """
         if n > 14:
             return []
@@ -221,7 +224,11 @@ class Circuito(SIA):
         visitado = [False] * n
 
         def dfs(inicio: int, actual: int, camino: list[int], peso: float) -> None:
+            if len(circuitos) >= self._MAX_CIRCUITOS:
+                return
             for vecino in range(n):
+                if len(circuitos) >= self._MAX_CIRCUITOS:
+                    return
                 w = adj[actual][vecino]
                 if w == 0.0:
                     continue
@@ -236,6 +243,8 @@ class Circuito(SIA):
                     visitado[vecino] = False
 
         for s in range(n):
+            if len(circuitos) >= self._MAX_CIRCUITOS:
+                break
             visitado[s] = True
             dfs(s, s, [s], 1.0)
             visitado[s] = False
