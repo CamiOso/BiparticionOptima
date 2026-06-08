@@ -7,7 +7,7 @@ from itertools import combinations
 import numpy as np
 
 from src.constantes.models import BB_LABEL
-from src.funciones.formato import fmt_biparticion
+from src.funciones.formato import fmt_biparticion, fmt_k_particion_q
 from src.funciones.iit import seleccionar_emd
 from src.modelos.base.sia import SIA
 from src.modelos.nucleo.solucion import Solucion
@@ -21,29 +21,44 @@ class _Mejor:
     submecanismo: tuple[int, ...]
 
 
-class BranchBound(SIA):
-    """Búsqueda exacta/cuasi-exacta para el MIP-IIT.
+@dataclass
+class _MejorK:
+    perdida: float
+    distribucion: np.ndarray
+    asignacion: tuple[int, ...]  # etiqueta de grupo para cada vértice
 
-    Fase exacta (n_total <= umbral_exacto, por defecto 14 bits = 7 nodos/lado):
-        Enumera todas las biparticiones válidas y devuelve el óptimo global.
-        Garantiza el mismo resultado que FuerzaBruta pero con cache compartida.
+
+class BranchBound(SIA):
+    """Búsqueda exacta/cuasi-exacta para el MIP-IIT, k≥2.
+
+    k=2 (bipartición)
+    -----------------
+    Fase exacta (n_total <= umbral_exacto, default 14):
+        Enumera todas las biparticiones válidas → óptimo global garantizado.
 
     Fase heurística (n_total > umbral_exacto):
-        1. SA multi-arranque: n_sa_arranques cadenas independientes con
-           temperaturas iniciales escalonadas, exploración más amplia que
-           el SA de QNodos (que usa un solo arranque desde el resultado MAO).
-        2. Expansión Hamming: para el mejor de los SA, evalúa exhaustivamente
-           todos los vecinos dentro de distancia Hamming radio_hamming.
-           Captura mínimos no submodulares a los que el SA de QNodos no llega.
+        SA multi-arranque + expansión Hamming exhaustiva.
 
-    Cuándo supera a QNodos
-    ----------------------
-    QNodos es exacto para funciones submodulares (~88% de sistemas aleatorios).
-    En el ~12% restante cae a SA desde un único arranque (resultado MAO), que
-    puede quedar atrapado en un mínimo local lejano del óptimo.
-    BranchBound:
-      - n <= 7 nodos/lado: GARANTIZA el óptimo (exhaustivo).
-      - n > 7 nodos/lado: reduce el gap con multi-arranque + Hamming exhaustivo.
+    k>2 (k-partición)
+    -----------------
+    Fase exacta (S(n,k) <= max_exact_k, default 200_000):
+        Genera todas las k-particiones válidas via cadenas de crecimiento
+        restringido → óptimo global garantizado.
+        Ejemplos de alcance exacto:
+          k=2: n_total ≤ 18  (S(18,2)=131 071)
+          k=3: n_total ≤ 12  (S(12,3)=86 526)
+          k=4: n_total ≤ 10  (S(10,4)=34 105)
+          k=5: n_total ≤ 10  (S(10,5)=42 525)
+
+    Fase heurística (S(n,k) > max_exact_k):
+        SA multi-arranque sobre asignaciones de k grupos + búsqueda
+        exhaustiva del vecindario Hamming-1 desde el mejor SA.
+
+    Ventaja sobre QNodos para k>2
+    ------------------------------
+    QNodos usa un único warm-start desde el árbol de Queyranne + SA.
+    BranchBound usa n_sa_arranques arranques independientes y búsqueda
+    local exhaustiva, capturando más mínimos no-submodulares.
     """
 
     def __init__(
@@ -54,6 +69,7 @@ class BranchBound(SIA):
         n_sa_arranques: int = 8,
         radio_hamming: int = 3,
         pasos_sa: int = 800,
+        max_exact_k: int = 200_000,
     ) -> None:
         super().__init__(tpm, config)
         self.distancia_metrica = seleccionar_emd(config)
@@ -61,7 +77,9 @@ class BranchBound(SIA):
         self.n_sa_arranques = n_sa_arranques
         self.radio_hamming = radio_hamming
         self.pasos_sa = pasos_sa
+        self.max_exact_k = max_exact_k
         self._cache: dict[tuple, tuple[float, np.ndarray]] = {}
+        self._cache_k: dict[tuple, tuple[float, np.ndarray]] = {}
 
     # ------------------------------------------------------------------
     # Interfaz pública
@@ -75,14 +93,12 @@ class BranchBound(SIA):
         mecanismo: str,
         k: int = 2,
     ) -> Solucion:
-        if k != 2:
-            raise NotImplementedError("BranchBound solo soporta k=2 (bipartición).")
-
         self.sia_preparar_subsistema(estado_inicial, condicion, alcance, mecanismo)
 
         assert self.sia_subsistema is not None
         assert self.sia_dists_marginales is not None
         self._cache.clear()
+        self._cache_k.clear()
 
         alc_total = tuple(int(v) for v in self.sia_subsistema.indices_ncubos.tolist())
         mec_total = tuple(int(v) for v in self.sia_subsistema.dims_ncubos.tolist())
@@ -97,37 +113,64 @@ class BranchBound(SIA):
                 particion="NO-PARTITION",
             )
 
-        n_total = len(alc_total) + len(mec_total)
+        # ── k=2: código original (bipartición) ──────────────────────────
+        if k == 2:
+            n_total = len(alc_total) + len(mec_total)
+            if n_total <= self.umbral_exacto:
+                mejor = self._fase_exacta(alc_total, mec_total)
+            else:
+                mejor = self._fase_heuristica(alc_total, mec_total)
 
-        if n_total <= self.umbral_exacto:
-            mejor = self._fase_exacta(alc_total, mec_total)
+            return Solucion(
+                estrategia=BB_LABEL,
+                perdida=mejor.perdida,
+                distribucion_subsistema=self.sia_dists_marginales,
+                distribucion_particion=mejor.distribucion,
+                estado_inicial=estado_inicial,
+                particion=fmt_biparticion(
+                    mejor.subalcance,
+                    mejor.submecanismo,
+                    alc_total,
+                    mec_total,
+                ),
+            )
+
+        # ── k>2: k-partición general ─────────────────────────────────────
+        # vertices: (tiempo=0 → mecanismo, tiempo=1 → alcance)
+        vertices: list[tuple[int, int]] = (
+            [(0, int(v)) for v in mec_total]
+            + [(1, int(v)) for v in alc_total]
+        )
+        n = len(vertices)
+        s = self._stirling(n, k)
+
+        if s <= self.max_exact_k:
+            mejor_k = self._fase_exacta_k(vertices, k)
         else:
-            mejor = self._fase_heuristica(alc_total, mec_total)
+            mejor_k = self._fase_heuristica_k(vertices, k)
 
+        grupos = [
+            [vertices[i] for i in range(n) if mejor_k.asignacion[i] == g]
+            for g in range(k)
+        ]
         return Solucion(
             estrategia=BB_LABEL,
-            perdida=mejor.perdida,
+            perdida=mejor_k.perdida,
             distribucion_subsistema=self.sia_dists_marginales,
-            distribucion_particion=mejor.distribucion,
+            distribucion_particion=mejor_k.distribucion,
             estado_inicial=estado_inicial,
-            particion=fmt_biparticion(
-                mejor.subalcance,
-                mejor.submecanismo,
-                alc_total,
-                mec_total,
-            ),
+            particion=fmt_k_particion_q(grupos),
         )
 
-    # ------------------------------------------------------------------
-    # Fase exacta: enumeración exhaustiva
-    # ------------------------------------------------------------------
+    # ==================================================================
+    # k=2: código original sin cambios
+    # ==================================================================
 
     def _fase_exacta(
         self,
         alc_total: tuple[int, ...],
         mec_total: tuple[int, ...],
     ) -> _Mejor:
-        """Evalúa todas las biparticiones válidas y devuelve el mínimo global."""
         n_a = len(alc_total)
         n_m = len(mec_total)
 
@@ -143,7 +186,6 @@ class BranchBound(SIA):
             alc_set = tuple(alc_total[i] for i in range(n_a) if (alc_int >> i) & 1)
             for mec_int in range(1 << n_m):
                 mec_set = tuple(mec_total[j] for j in range(n_m) if (mec_int >> j) & 1)
-                # Excluir los dos estados triviales
                 if not alc_set and not mec_set:
                     continue
                 if len(alc_set) == n_a and len(mec_set) == n_m:
@@ -153,10 +195,6 @@ class BranchBound(SIA):
                     mejor = _Mejor(perdida, dist, alc_set, mec_set)
 
         return mejor
-
-    # ------------------------------------------------------------------
-    # Fase heurística: SA multi-arranque + expansión Hamming
-    # ------------------------------------------------------------------
 
     def _fase_heuristica(
         self,
@@ -171,20 +209,14 @@ class BranchBound(SIA):
             submecanismo=(),
         )
 
-        n_a = len(alc_total)
-        n_m = len(mec_total)
-
-        # SA desde n_sa_arranques inicializaciones distintas
         for arranque in range(self.n_sa_arranques):
             resultado = self._sa_run(
                 alc_total, mec_total, arranque,
-                # Temperatura inicial escalonada: arranques posteriores exploran más
                 temp_inicial=0.5 * (1.0 + arranque * 0.4),
             )
             if resultado.perdida < mejor.perdida:
                 mejor = resultado
 
-        # Expansión Hamming exhaustiva desde el mejor SA
         for alc_set, mec_set in self._hamming_ball(
             mejor.subalcance, mejor.submecanismo, alc_total, mec_total
         ):
@@ -192,7 +224,6 @@ class BranchBound(SIA):
             if perdida < mejor.perdida:
                 mejor = _Mejor(perdida, dist, alc_set, mec_set)
 
-        # Si la expansión Hamming mejoró, re-expandir desde el nuevo mínimo
         if mejor.subalcance or mejor.submecanismo:
             for alc_set, mec_set in self._hamming_ball(
                 mejor.subalcance, mejor.submecanismo, alc_total, mec_total
@@ -202,10 +233,6 @@ class BranchBound(SIA):
                     mejor = _Mejor(perdida, dist, alc_set, mec_set)
 
         return mejor
-
-    # ------------------------------------------------------------------
-    # SA (Simulated Annealing) sobre (alc_mask, mec_mask)
-    # ------------------------------------------------------------------
 
     def _sa_run(
         self,
@@ -221,7 +248,6 @@ class BranchBound(SIA):
 
         rng = np.random.default_rng(42 + semilla_offset)
 
-        # Inicialización: bit aleatorio garantizado válido
         alc_mask = list(rng.integers(0, 2, size=n_a).tolist())
         mec_mask = list(rng.integers(0, 2, size=n_m).tolist())
         self._garantizar_valido(alc_mask, mec_mask, n_a, n_m, rng)
@@ -236,7 +262,6 @@ class BranchBound(SIA):
         temp = temp_inicial
 
         for _ in range(self.pasos_sa):
-            # Movimiento: flip de un bit aleatorio (alc o mec)
             idx = int(rng.integers(n_total))
             if idx < n_a:
                 alc_mask[idx] ^= 1
@@ -247,7 +272,6 @@ class BranchBound(SIA):
             nueva_mec = tuple(mec_total[j] for j in range(n_m) if mec_mask[j])
 
             if not nueva_alc and not nueva_mec:
-                # Revertir
                 if idx < n_a:
                     alc_mask[idx] ^= 1
                 else:
@@ -270,7 +294,6 @@ class BranchBound(SIA):
                 if perdida < mejor.perdida:
                     mejor = _Mejor(perdida, dist, alc_set, mec_set)
             else:
-                # Revertir movimiento
                 if idx < n_a:
                     alc_mask[idx] ^= 1
                 else:
@@ -280,10 +303,6 @@ class BranchBound(SIA):
 
         return mejor
 
-    # ------------------------------------------------------------------
-    # Expansión Hamming
-    # ------------------------------------------------------------------
-
     def _hamming_ball(
         self,
         alc_star: tuple[int, ...],
@@ -291,7 +310,6 @@ class BranchBound(SIA):
         alc_total: tuple[int, ...],
         mec_total: tuple[int, ...],
     ) -> list[tuple[tuple[int, ...], tuple[int, ...]]]:
-        """Genera todos los (alc, mec) a distancia Hamming ≤ radio_hamming de (alc_star, mec_star)."""
         n_a = len(alc_total)
         n_m = len(mec_total)
         n = n_a + n_m
@@ -322,10 +340,6 @@ class BranchBound(SIA):
                     resultado.append(clave)
 
         return resultado
-
-    # ------------------------------------------------------------------
-    # Evaluador con cache
-    # ------------------------------------------------------------------
 
     def _evaluar(
         self,
@@ -362,8 +376,217 @@ class BranchBound(SIA):
         n_m: int,
         rng: np.random.Generator,
     ) -> None:
-        """Asegura que la máscara no es trivial (todo-cero o todo-uno)."""
         if not any(alc_mask) and not any(mec_mask):
             alc_mask[int(rng.integers(n_a))] = 1
         if all(alc_mask) and all(mec_mask):
             alc_mask[int(rng.integers(n_a))] = 0
+
+    # ==================================================================
+    # k>2: k-partición general
+    # ==================================================================
+
+    @staticmethod
+    def _stirling(n: int, k: int) -> int:
+        """Número de Stirling de segunda especie S(n, k): particiones de n en k grupos."""
+        if k > n or k < 1:
+            return 0
+        if k == 1 or k == n:
+            return 1
+        dp = [[0] * (k + 1) for _ in range(n + 1)]
+        dp[0][0] = 1
+        for i in range(1, n + 1):
+            for j in range(1, min(i, k) + 1):
+                dp[i][j] = j * dp[i - 1][j] + dp[i - 1][j - 1]
+        return dp[n][k]
+
+    def _enumerar_k_particiones(self, n: int, k: int):
+        """Genera todas las asignaciones de n elementos a exactamente k grupos (RGS)."""
+        def rec(i: int, current: list[int], max_usado: int):
+            if i == n:
+                if max_usado == k - 1:
+                    yield tuple(current)
+                return
+            for g in range(min(max_usado + 2, k)):
+                current.append(g)
+                yield from rec(i + 1, current, max(max_usado, g))
+                current.pop()
+
+        yield from rec(0, [], -1)
+
+    def _evaluar_k(
+        self,
+        asignacion: tuple[int, ...],
+        vertices: list[tuple[int, int]],
+    ) -> tuple[float, np.ndarray]:
+        en_cache = self._cache_k.get(asignacion)
+        if en_cache is not None:
+            return en_cache
+
+        assert self.sia_subsistema is not None
+        assert self.sia_dists_marginales is not None
+
+        n = len(vertices)
+        k = max(asignacion) + 1
+
+        grupos_mec = [
+            tuple(
+                vertices[i][1]
+                for i in range(n)
+                if asignacion[i] == g and vertices[i][0] == 0
+            )
+            for g in range(k)
+        ]
+        grupos_alc = [
+            tuple(
+                vertices[i][1]
+                for i in range(n)
+                if asignacion[i] == g and vertices[i][0] == 1
+            )
+            for g in range(k)
+        ]
+
+        sistema_partido = self.sia_subsistema.k_bipartir_temporal(grupos_mec, grupos_alc)
+        dist = sistema_partido.distribucion_marginal()
+        if dist.size != self.sia_dists_marginales.size:
+            dist_a = np.zeros_like(self.sia_dists_marginales)
+            dist_a[: dist.size] = dist
+            dist = dist_a
+
+        perdida = float(self.distancia_metrica(self.sia_dists_marginales, dist))
+        self._cache_k[asignacion] = (perdida, dist)
+        return perdida, dist
+
+    def _fase_exacta_k(
+        self,
+        vertices: list[tuple[int, int]],
+        k: int,
+    ) -> _MejorK:
+        assert self.sia_dists_marginales is not None
+        n = len(vertices)
+        mejor = _MejorK(
+            perdida=float("inf"),
+            distribucion=self.sia_dists_marginales.copy(),
+            asignacion=(0,) * n,
+        )
+        for asig in self._enumerar_k_particiones(n, k):
+            perdida, dist = self._evaluar_k(asig, vertices)
+            if perdida < mejor.perdida:
+                mejor = _MejorK(perdida, dist, asig)
+        return mejor
+
+    def _sa_run_k(
+        self,
+        vertices: list[tuple[int, int]],
+        k: int,
+        semilla_offset: int = 0,
+        temp_inicial: float = 1.0,
+        temp_final: float = 0.001,
+    ) -> _MejorK:
+        n = len(vertices)
+        rng = np.random.default_rng(42 + semilla_offset)
+
+        # Inicialización válida: todos los k grupos tienen al menos 1 elemento
+        base = list(range(k))
+        resto = list(rng.integers(0, k, size=max(0, n - k)).tolist())
+        asig = base + resto
+        rng.shuffle(asig)
+        asig = list(asig)
+
+        perdida, dist = self._evaluar_k(tuple(asig), vertices)
+        mejor = _MejorK(perdida, dist, tuple(asig))
+
+        factor = (temp_final / temp_inicial) ** (1.0 / max(1, self.pasos_sa))
+        temp = temp_inicial
+
+        for _ in range(self.pasos_sa):
+            elem = int(rng.integers(n))
+            g_actual = asig[elem]
+
+            # No mover si es el único elemento del grupo (quedaría vacío)
+            if sum(1 for x in asig if x == g_actual) == 1:
+                temp *= factor
+                continue
+
+            opciones = [g for g in range(k) if g != g_actual]
+            g_nuevo = int(opciones[int(rng.integers(len(opciones)))])
+            asig[elem] = g_nuevo
+
+            nueva_p, nueva_d = self._evaluar_k(tuple(asig), vertices)
+            delta = nueva_p - perdida
+
+            if delta < 0 or rng.random() < math.exp(-delta / (temp + 1e-12)):
+                perdida, dist = nueva_p, nueva_d
+                if perdida < mejor.perdida:
+                    mejor = _MejorK(perdida, dist, tuple(asig))
+            else:
+                asig[elem] = g_actual
+
+            temp *= factor
+
+        return mejor
+
+    def _vecindad_1_k(
+        self,
+        asig: tuple[int, ...],
+        n: int,
+        k: int,
+    ) -> list[tuple[int, ...]]:
+        """Todos los vecinos a distancia Hamming 1: un elemento cambia de grupo."""
+        conteo = [0] * k
+        for g in asig:
+            conteo[g] += 1
+
+        vistos: set[tuple[int, ...]] = set()
+        resultado: list[tuple[int, ...]] = []
+
+        for elem in range(n):
+            g_actual = asig[elem]
+            if conteo[g_actual] == 1:
+                continue  # vaciaria el grupo
+            for g_nuevo in range(k):
+                if g_nuevo == g_actual:
+                    continue
+                nueva = list(asig)
+                nueva[elem] = g_nuevo
+                clave = tuple(nueva)
+                if clave not in vistos:
+                    vistos.add(clave)
+                    resultado.append(clave)
+
+        return resultado
+
+    def _fase_heuristica_k(
+        self,
+        vertices: list[tuple[int, int]],
+        k: int,
+    ) -> _MejorK:
+        assert self.sia_dists_marginales is not None
+        n = len(vertices)
+        mejor = _MejorK(
+            perdida=float("inf"),
+            distribucion=self.sia_dists_marginales.copy(),
+            asignacion=(0,) * n,
+        )
+
+        # Multi-arranque SA con temperaturas escalonadas
+        for arranque in range(self.n_sa_arranques):
+            resultado = self._sa_run_k(
+                vertices, k, arranque,
+                temp_inicial=0.5 * (1.0 + arranque * 0.4),
+            )
+            if resultado.perdida < mejor.perdida:
+                mejor = resultado
+
+        # Búsqueda exhaustiva del vecindario Hamming-1 desde el mejor SA
+        # (se repite dos veces como en el caso k=2)
+        for _ in range(2):
+            mejorado = False
+            for asig_vec in self._vecindad_1_k(mejor.asignacion, n, k):
+                perdida, dist = self._evaluar_k(asig_vec, vertices)
+                if perdida < mejor.perdida - 1e-12:
+                    mejor = _MejorK(perdida, dist, asig_vec)
+                    mejorado = True
+            if not mejorado:
+                break
+
+        return mejor
