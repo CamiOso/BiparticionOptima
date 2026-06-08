@@ -1,3 +1,13 @@
+"""Estrategia espectral causal v2.
+
+Mejoras sobre v1:
+  - Pesos MI: W[i][j] = I(Xi(t+1); Xj(t)) en lugar de sensibilidad finita.
+    Captura dependencia estadística total; más rápido (slicing vs loop Python).
+  - Laplacianos dirigidos: L_sal (D_out) y L_ent (D_in) en lugar del simétrico
+    D-W. Sus espectros complementarios preservan asimetría causal W[i][j]≠W[j][i].
+  - Multi-arranque: candidatos de L_sal, L_ent, hipergrafo y aleatorios, todos
+    refinados con EMD exacto; retorna el mejor global.
+"""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -28,23 +38,21 @@ class _ResultadoParticionK:
 
 
 class Circuito(SIA):
-    """Estrategia espectral inspirada en redes electricas.
+    """Estrategia espectral causal con pesos MI y búsqueda multi-arranque.
 
-    Modela el sistema como un circuito donde las conductancias representan
-    el acoplamiento entre nodos segun las probabilidades de transicion (TPM).
-    Construye el Laplaciano del grafo y usa sus eigenvectores para proponer
-    particiones de baja perdida en O(n^3):
-
-    - k=2: vector de Fiedler (segundo eigenvector) con multiples umbrales.
-    - k>2: embedding espectral con los k primeros eigenvectores + k-means.
-
-    En ambos casos se aplica refinamiento local para mejorar el resultado.
+    Construye W[i][j] = I(Xi(t+1); Xj(t)) (información mutua dirigida) y deriva
+    dos Laplacianos complementarios: L_sal ponderado por grados de salida (D_out)
+    y L_ent por grados de entrada (D_in). Sus eigenvectores generan particiones
+    candidatas que cubren la asimetría causal. El multi-arranque refina los mejores
+    candidatos con EMD exacto y retorna el mínimo global encontrado.
     """
 
     def __init__(self, tpm: np.ndarray, config=None) -> None:
         super().__init__(tpm, config)
         self.distancia_metrica = seleccionar_emd(config)
         self._max_iter_refinamiento = 24
+        self._n_arranques = 4
+        self._n_aleatorios = 4
         self._cache_particiones: dict[
             tuple[tuple[int, ...], tuple[int, ...]],
             tuple[float, np.ndarray],
@@ -120,85 +128,152 @@ class Circuito(SIA):
         )
 
     # ------------------------------------------------------------------
-    # Red electrica: conductancias y Laplaciano
+    # Pesos por Información Mutua Dirigida
     # ------------------------------------------------------------------
 
-    def _construir_conductancias(self, nodos: list[int]) -> np.ndarray:
-        """W[i][j] = sensibilidad promedio de nodo i al estado del nodo j.
+    def _construir_pesos(self, nodos: list[int]) -> tuple[np.ndarray, np.ndarray]:
+        """Construye dos matrices de peso en un solo recorrido de ncubos.
 
-        Se calcula como la variacion media de P(X_i=1|X(t)) al cambiar el
-        bit de X_j, promediada sobre todos los estados de los demas nodos.
-        La simetrizacion W += W.T asegura un Laplaciano no dirigido.
+        Returns
+        -------
+        W_mi  : W[i][j] = I(Xi(t+1); Xj(t)) — dirigida, sin simetrizar.
+        W_sen : W[i][j] = |P(Xi=1|Xj=0) - P(Xi=1|Xj=1)| — sensibilidad
+                simetrizada (como v1) para conservar cobertura original.
         """
         assert self.sia_subsistema is not None
         n = len(nodos)
         nodo_a_idx = {nodo: idx for idx, nodo in enumerate(nodos)}
-        W = np.zeros((n, n), dtype=np.float64)
+        W_mi  = np.zeros((n, n), dtype=np.float64)
+        W_sen = np.zeros((n, n), dtype=np.float64)
 
         for cubo in self.sia_subsistema.ncubos:
             i = int(cubo.indice)
             if i not in nodo_a_idx:
                 continue
             idx_i = nodo_a_idx[i]
-
             for dim in cubo.dims.tolist():
                 j = int(dim)
                 if j not in nodo_a_idx:
                     continue
                 idx_j = nodo_a_idx[j]
-                conductancia = self._sensibilidad(cubo, j)
-                # Acumula en ambas direcciones para simetrizar.
-                W[idx_i][idx_j] += conductancia
-                W[idx_j][idx_i] += conductancia
+                mi, sen = self._pesos_dim(cubo, j)
+                W_mi[idx_i][idx_j] += mi
+                # Sensibilidad simetrizada — igual que v1
+                W_sen[idx_i][idx_j] += sen
+                W_sen[idx_j][idx_i] += sen
 
-        return W
+        return W_mi, W_sen
 
-    def _sensibilidad(self, cubo, dim_nodo: int) -> float:
-        """Diferencia finita: |P(i=1|j=0,...) - P(i=1|j=1,...)| promediada."""
+    def _pesos_dim(self, cubo, dim_nodo: int) -> tuple[float, float]:
+        """Calcula MI y sensibilidad para un par (Xi, Xj) con slicing numpy."""
+        dims = cubo.dims.tolist()
+        if dim_nodo not in dims:
+            return 0.0, 0.0
+
+        pos = dims.index(dim_nodo)
+        data = cubo.data
+
+        idx_0 = [slice(None)] * len(dims)
+        idx_0[pos] = 0
+        idx_1 = [slice(None)] * len(dims)
+        idx_1[pos] = 1
+
+        d0 = np.asarray(data[tuple(idx_0)])
+        d1 = np.asarray(data[tuple(idx_1)])
+        p1_xj0 = float(d0.mean())
+        p1_xj1 = float(d1.mean())
+
+        # mean(|P(Xi=1|Xj=0,s) - P(Xi=1|Xj=1,s)|) — igual que v1 pero vectorizado
+        sen = float(np.abs(d0 - d1).mean())
+
+        # Información mutua I(Xi(t+1); Xj(t))
+        p_xi1 = 0.5 * (p1_xj0 + p1_xj1)
+        p_xi0 = 1.0 - p_xi1
+        eps = 1e-15
+        mi = 0.0
+        for p_xj, p1_g in ((0.5, p1_xj0), (0.5, p1_xj1)):
+            p0_g = 1.0 - p1_g
+            p11 = p1_g * p_xj
+            p01 = p0_g * p_xj
+            if p11 > eps and p_xi1 > eps:
+                mi += p11 * np.log2(p11 / (p_xi1 * p_xj + eps))
+            if p01 > eps and p_xi0 > eps:
+                mi += p01 * np.log2(p01 / (p_xi0 * p_xj + eps))
+
+        return max(0.0, mi), sen
+
+    def _construir_pesos_mi(self, nodos: list[int]) -> np.ndarray:
+        """Conveniencia: devuelve solo W_mi (compatibilidad con _resolver_k)."""
+        return self._construir_pesos(nodos)[0]
+
+    def _info_mutua_dirigida(self, cubo, dim_nodo: int) -> float:
+        """I(Xi(t+1); Xj(t)) bajo prior uniforme sobre los demás nodos.
+
+        Usa slicing numpy: separa estados con Xj=0 y Xj=1, promedia sobre
+        los demás dims. Más rápido que el loop Python de la versión anterior
+        y captura dependencia estadística total (no solo diferencia marginal).
+        """
         dims = cubo.dims.tolist()
         if dim_nodo not in dims:
             return 0.0
 
         pos = dims.index(dim_nodo)
         data = cubo.data
-        n_dims = len(dims)
 
-        if n_dims == 1:
-            return abs(float(data[0]) - float(data[1]))
+        idx_0 = [slice(None)] * len(dims)
+        idx_0[pos] = 0
+        idx_1 = [slice(None)] * len(dims)
+        idx_1[pos] = 1
 
-        otras_dims = [d for d in range(n_dims) if d != pos]
-        otras_sizes = [data.shape[d] for d in otras_dims]
-        n_otras = 1
-        for s in otras_sizes:
-            n_otras *= s
+        p1_xj0 = float(np.asarray(data[tuple(idx_0)]).mean())
+        p1_xj1 = float(np.asarray(data[tuple(idx_1)]).mean())
 
-        total = 0.0
-        for estado_idx in range(n_otras):
-            idx_otras = []
-            temp = estado_idx
-            for s in reversed(otras_sizes):
-                idx_otras.append(temp % s)
-                temp //= s
-            idx_otras = list(reversed(idx_otras))
+        p_xi1 = 0.5 * (p1_xj0 + p1_xj1)
+        p_xi0 = 1.0 - p_xi1
 
-            idx_0 = [0] * n_dims
-            idx_1 = [0] * n_dims
-            idx_0[pos] = 0
-            idx_1[pos] = 1
-            for k_ot, d_ot in enumerate(otras_dims):
-                idx_0[d_ot] = idx_otras[k_ot]
-                idx_1[d_ot] = idx_otras[k_ot]
+        eps = 1e-15
+        mi = 0.0
+        for p_xj, p1_g in ((0.5, p1_xj0), (0.5, p1_xj1)):
+            p0_g = 1.0 - p1_g
+            p11 = p1_g * p_xj
+            p01 = p0_g * p_xj
+            if p11 > eps and p_xi1 > eps:
+                mi += p11 * np.log2(p11 / (p_xi1 * p_xj + eps))
+            if p01 > eps and p_xi0 > eps:
+                mi += p01 * np.log2(p01 / (p_xi0 * p_xj + eps))
 
-            total += abs(float(data[tuple(idx_0)]) - float(data[tuple(idx_1)]))
-
-        return total / n_otras
-
-    def _laplaciano(self, W: np.ndarray) -> np.ndarray:
-        """L = D - W  (D diagonal de grados = suma de conductancias por fila)."""
-        return np.diag(W.sum(axis=1)) - W
+        return max(0.0, mi)
 
     # ------------------------------------------------------------------
-    # Circuitos causales (Johnson simplificado) y Laplaciano de hipergrafo
+    # Laplacianos dirigidos
+    # ------------------------------------------------------------------
+
+    def _laplaciano_salida(self, W: np.ndarray) -> np.ndarray:
+        """L_sal = D_out - Wsym.  D_out[i] = influencia que i emite.
+
+        Nodos con alto grado de salida (fuentes causales) tienen mayor peso
+        diagonal. El espectro identifica particiones que aíslan fuentes.
+        """
+        W_sym = 0.5 * (W + W.T)
+        return np.diag(W.sum(axis=1)) - W_sym
+
+    def _laplaciano_entrada(self, W: np.ndarray) -> np.ndarray:
+        """L_ent = D_in - Wsym.  D_in[i] = influencia que i recibe.
+
+        Complementario a L_sal: cuando la red es asimétrica (caso general
+        en IIT), L_ent genera eigenvectores distintos a L_sal, ampliando
+        la diversidad de candidatos espectrales.
+        """
+        W_sym = 0.5 * (W + W.T)
+        return np.diag(W.sum(axis=0)) - W_sym
+
+    def _laplaciano(self, W: np.ndarray) -> np.ndarray:
+        """Laplaciano simétrico estándar — usado por el hipergrafo."""
+        W_sym = 0.5 * (W + W.T)
+        return np.diag(W_sym.sum(axis=1)) - W_sym
+
+    # ------------------------------------------------------------------
+    # Circuitos causales (DFS limitado) y Laplaciano de hipergrafo
     # ------------------------------------------------------------------
 
     _MAX_CIRCUITOS = 4000
@@ -209,12 +284,10 @@ class Circuito(SIA):
         W: np.ndarray,
         umbral: float = 0.0,
     ) -> list[tuple[list[int], float]]:
-        """Todos los circuitos simples del grafo dirigido W > umbral.
+        """Circuitos simples del grafo dirigido W > umbral (Johnson simplificado).
 
-        Usa DFS con backtracking (equivalente al algoritmo de Johnson para
-        grafos pequenos). Cada circuito tiene asociada su fuerza = producto
-        de los pesos de sus aristas. Limitado a n<=14 y _MAX_CIRCUITOS para
-        evitar explosion combinatoria en grafos densos.
+        Limitado a n<=14 y _MAX_CIRCUITOS para evitar explosion combinatoria
+        en grafos densos.
         """
         if n > 14:
             return []
@@ -256,17 +329,7 @@ class Circuito(SIA):
         n: int,
         circuitos: list[tuple[list[int], float]],
     ) -> np.ndarray:
-        """Laplaciano del hipergrafo de circuitos causales.
-
-        Cada circuito es un hiperarco que conecta sus nodos con peso = su
-        fuerza. El Laplaciano es L_H = D_v - H W H^T, donde:
-          H[nodo][circuito] = 1 si el nodo pertenece al circuito
-          W = diagonal de fuerzas de circuitos
-          D_v[i] = suma de fuerzas de circuitos que contienen al nodo i
-
-        Captura la topologia ciclica real del sistema, no solo la conectividad
-        par-a-par que usa el Laplaciano de conductancias.
-        """
+        """Laplaciano del hipergrafo de circuitos causales (L_H = D_v - H W H^T)."""
         m = len(circuitos)
         if m == 0:
             return np.zeros((n, n), dtype=np.float64)
@@ -277,14 +340,12 @@ class Circuito(SIA):
                 H[nodo_idx, c_idx] = 1.0
 
         W_diag = np.array([fuerza for _, fuerza in circuitos], dtype=np.float64)
-        # L_H = D_v - H diag(W) H^T
         HW = H * W_diag[np.newaxis, :]
         HWHT = HW @ H.T
-        D_v = np.diag(HWHT.sum(axis=1))
-        return D_v - HWHT
+        return np.diag(HWHT.sum(axis=1)) - HWHT
 
     # ------------------------------------------------------------------
-    # Biparticion espectral (k = 2)
+    # Bipartición espectral multi-arranque
     # ------------------------------------------------------------------
 
     def _resolver_biparticion(
@@ -293,39 +354,49 @@ class Circuito(SIA):
         alcance_total: tuple[int, ...],
         mecanismo_total: tuple[int, ...],
     ) -> _ResultadoParticion:
-        candidatos = self._candidatos_fiedler(nodos, alcance_total, mecanismo_total)
-
+        """Evalúa candidatos espectrales + aleatorios; refina los mejores con EMD."""
         assert self.sia_dists_marginales is not None
+
+        candidatos = self._candidatos_espectrales(nodos, alcance_total, mecanismo_total)
+        candidatos += self._candidatos_aleatorios(nodos, alcance_total, mecanismo_total)
+
+        evaluados: list[tuple[float, np.ndarray, tuple[int, ...], tuple[int, ...]]] = []
+        for sa, sm in candidatos:
+            perd, dist = self._evaluar_particion(sa, sm)
+            evaluados.append((perd, dist, sa, sm))
+        evaluados.sort(key=lambda x: x[0])
+
         mejor = _ResultadoParticion(
             perdida=float("inf"),
             distribucion=self.sia_dists_marginales.copy(),
             subalcance=(),
             submecanismo=(),
         )
+        for perd, dist, sa, sm in evaluados[: self._n_arranques]:
+            inicio = _ResultadoParticion(perdida=perd, distribucion=dist, subalcance=sa, submecanismo=sm)
+            res = self._refinar_local(inicio, alcance_total, mecanismo_total)
+            if res.perdida < mejor.perdida:
+                mejor = res
 
-        for subalcance, submecanismo in candidatos:
-            perdida, distribucion = self._evaluar_particion(subalcance, submecanismo)
-            if perdida < mejor.perdida:
-                mejor = _ResultadoParticion(
-                    perdida=perdida,
-                    distribucion=distribucion,
-                    subalcance=subalcance,
-                    submecanismo=submecanismo,
-                )
+        # Always refine single-node fallback candidates regardless of their initial EMD,
+        # so refinement can reach asymmetric cuts like (sa=(x,), sm=()) that the
+        # spectral/random sweeps miss (eigenvectors generate symmetric node splits).
+        for sa, sm in self._candidatos_fallback(nodos, alcance_total, mecanismo_total):
+            perd, dist = self._evaluar_particion(sa, sm)
+            inicio = _ResultadoParticion(perdida=perd, distribucion=dist, subalcance=sa, submecanismo=sm)
+            res = self._refinar_local(inicio, alcance_total, mecanismo_total)
+            if res.perdida < mejor.perdida:
+                mejor = res
 
-        return self._refinar_local(mejor, alcance_total, mecanismo_total)
+        return mejor
 
-    def _candidatos_fiedler(
+    def _candidatos_espectrales(
         self,
         nodos: list[int],
         alcance_total: tuple[int, ...],
         mecanismo_total: tuple[int, ...],
     ) -> list[tuple[tuple[int, ...], tuple[int, ...]]]:
-        """Genera candidatos barriendo umbrales sobre el vector de Fiedler.
-
-        Tambien explora los eigenvectores 3 y 4 para mayor robustez ante
-        sistemas con multiples puntos de corte de costo similar.
-        """
+        """Candidatos desde eigenvectores de L_sal, L_ent y L_hipergrafo."""
         n = len(nodos)
         if n == 1:
             nodo = nodos[0]
@@ -334,57 +405,84 @@ class Circuito(SIA):
                 ((), tuple(v for v in mecanismo_total if v == nodo)),
             ]
 
-        W = self._construir_conductancias(nodos)
+        W_mi, W_sen = self._construir_pesos(nodos)
+        # Circuitos con W_sen (simétrica, densa) para reproducir cobertura de v1.
+        circuitos = self._encontrar_circuitos(n, W_sen, umbral=0.0)
 
-        # Preferir el Laplaciano de hipergrafo cuando existen circuitos causales.
-        # Cae al Laplaciano de conductancias si no hay circuitos (n grande o grafo acíclico).
-        circuitos = self._encontrar_circuitos(n, W, umbral=0.0)
-        if circuitos:
-            L = self._laplaciano_hipergrafo(n, circuitos)
-            if np.allclose(L, 0):
-                L = self._laplaciano(W)
-        else:
-            L = self._laplaciano(W)
-
-        try:
-            eigenvalores, eigenvectores = np.linalg.eigh(L)
-        except np.linalg.LinAlgError:
-            return self._candidatos_fallback(nodos, alcance_total, mecanismo_total)
-
-        orden = np.argsort(eigenvalores)
         candidatos: list[tuple[tuple[int, ...], tuple[int, ...]]] = []
         vistos: set[tuple[tuple[int, ...], tuple[int, ...]]] = set()
 
-        def agregar_desde_vector(ev: np.ndarray) -> None:
-            valores_unicos = np.unique(ev)
-            umbrales = [
-                (valores_unicos[i] + valores_unicos[i + 1]) / 2.0
-                for i in range(len(valores_unicos) - 1)
-            ]
-            if not umbrales:
-                umbrales = [0.0]
+        def _sweep(L: np.ndarray) -> None:
+            try:
+                eigenvalores, eigenvectores = np.linalg.eigh(L)
+            except np.linalg.LinAlgError:
+                return
+            orden = np.argsort(eigenvalores)
+            for ev_idx in range(1, min(4, n)):
+                ev = eigenvectores[:, orden[ev_idx]]
+                valores_unicos = np.unique(ev)
+                umbrales = [
+                    (valores_unicos[i] + valores_unicos[i + 1]) / 2.0
+                    for i in range(len(valores_unicos) - 1)
+                ]
+                if not umbrales:
+                    umbrales = [0.0]
+                for thr in umbrales:
+                    for grupo_set in (
+                        {idx for idx in range(n) if ev[idx] <= thr},
+                        {idx for idx in range(n) if ev[idx] > thr},
+                    ):
+                        if not grupo_set or len(grupo_set) == n:
+                            continue
+                        grupo_nodos = {nodos[idx] for idx in grupo_set}
+                        clave = (
+                            tuple(v for v in alcance_total if v in grupo_nodos),
+                            tuple(v for v in mecanismo_total if v in grupo_nodos),
+                        )
+                        if clave not in vistos and (clave[0] or clave[1]):
+                            vistos.add(clave)
+                            candidatos.append(clave)
 
-            for umbral in umbrales:
-                for grupo0_set in (
-                    {idx for idx in range(n) if ev[idx] <= umbral},
-                    {idx for idx in range(n) if ev[idx] > umbral},
-                ):
-                    if not grupo0_set or len(grupo0_set) == n:
-                        continue
-                    grupo0_nodos = {nodos[idx] for idx in grupo0_set}
-                    clave = (
-                        tuple(v for v in alcance_total if v in grupo0_nodos),
-                        tuple(v for v in mecanismo_total if v in grupo0_nodos),
-                    )
-                    if clave not in vistos and (clave[0] or clave[1]):
-                        vistos.add(clave)
-                        candidatos.append(clave)
+        if circuitos:
+            L_h = self._laplaciano_hipergrafo(n, circuitos)
+            if not np.allclose(L_h, 0):
+                _sweep(L_h)
 
-        # Vector de Fiedler (indice 1) y los siguientes dos para robustez.
-        for ev_idx in range(1, min(4, n)):
-            agregar_desde_vector(eigenvectores[:, orden[ev_idx]])
+        # Cuatro Laplacianos: sen_sim (cobertura v1), mi_sim, mi_sal, mi_ent.
+        _sweep(self._laplaciano(W_sen))       # sensibilidad simetrizada — cobertura original
+        _sweep(self._laplaciano(W_mi))        # MI simétrica
+        _sweep(self._laplaciano_salida(W_mi)) # MI + grados de salida
+        _sweep(self._laplaciano_entrada(W_mi)) # MI + grados de entrada
 
         return candidatos or self._candidatos_fallback(nodos, alcance_total, mecanismo_total)
+
+    def _candidatos_aleatorios(
+        self,
+        nodos: list[int],
+        alcance_total: tuple[int, ...],
+        mecanismo_total: tuple[int, ...],
+    ) -> list[tuple[tuple[int, ...], tuple[int, ...]]]:
+        """Particiones aleatorias de tamaño variado para diversificar la búsqueda."""
+        n = len(nodos)
+        if n < 2:
+            return []
+        rng = np.random.default_rng(0xCAFE)
+        candidatos: list[tuple[tuple[int, ...], tuple[int, ...]]] = []
+        vistos: set[tuple[tuple[int, ...], tuple[int, ...]]] = set()
+        for _ in range(self._n_aleatorios):
+            k = max(1, int(rng.integers(1, n)))
+            grupo = set(rng.choice(nodos, size=k, replace=False).tolist())
+            sa = tuple(v for v in alcance_total if v in grupo)
+            sm = tuple(v for v in mecanismo_total if v in grupo)
+            if not sa and not sm:
+                continue
+            if sa == alcance_total and sm == mecanismo_total:
+                continue
+            clave = (sa, sm)
+            if clave not in vistos:
+                vistos.add(clave)
+                candidatos.append(clave)
+        return candidatos
 
     def _candidatos_fallback(
         self,
@@ -395,14 +493,14 @@ class Circuito(SIA):
         """Cortes triviales de un nodo como emergencia."""
         candidatos = []
         for nodo in nodos:
-            subalcance = tuple(v for v in alcance_total if v == nodo)
-            submecanismo = tuple(v for v in mecanismo_total if v == nodo)
-            if subalcance or submecanismo:
-                candidatos.append((subalcance, submecanismo))
+            sa = tuple(v for v in alcance_total if v == nodo)
+            sm = tuple(v for v in mecanismo_total if v == nodo)
+            if sa or sm:
+                candidatos.append((sa, sm))
         return candidatos or [((alcance_total[0],) if alcance_total else (), ())]
 
     # ------------------------------------------------------------------
-    # K-particion espectral (k >= 3)
+    # K-partición espectral multi-arranque
     # ------------------------------------------------------------------
 
     def _resolver_k(
@@ -412,72 +510,89 @@ class Circuito(SIA):
         mecanismo_total: tuple[int, ...],
         k: int,
     ) -> _ResultadoParticionK:
-        W = self._construir_conductancias(nodos)
+        W_mi, W_sen = self._construir_pesos(nodos)
         n = len(nodos)
-
-        # Usar Laplaciano de hipergrafo si hay circuitos; conductancias como fallback.
-        circuitos = self._encontrar_circuitos(n, W, umbral=0.0)
-        if circuitos:
-            L = self._laplaciano_hipergrafo(n, circuitos)
-            if np.allclose(L, 0):
-                L = self._laplaciano(W)
-        else:
-            L = self._laplaciano(W)
         k_eff = min(k, n)
 
-        asignacion = self._embedding_k(L, n, k_eff)
-        perdida, distribucion = self._evaluar_k_particion(asignacion, nodos)
+        circuitos = self._encontrar_circuitos(n, W_mi, umbral=0.0)
+        L_h = self._laplaciano_hipergrafo(n, circuitos) if circuitos else None
 
         assert self.sia_dists_marginales is not None
         mejor = _ResultadoParticionK(
-            perdida=perdida,
-            distribucion=distribucion,
-            asignacion=asignacion,
+            perdida=float("inf"),
+            distribucion=self.sia_dists_marginales.copy(),
+            asignacion=(0,) * n,
             nodos=nodos,
         )
-        return self._refinar_k_local(mejor, k_eff, nodos)
 
-    def _embedding_k(self, L: np.ndarray, n: int, k: int) -> tuple[int, ...]:
+        laplacianos = [
+            self._laplaciano(W_sen),
+            self._laplaciano(W_mi),
+            self._laplaciano_salida(W_mi),
+            self._laplaciano_entrada(W_mi),
+        ]
+        if L_h is not None and not np.allclose(L_h, 0):
+            laplacianos.insert(0, L_h)
+
+        for L in laplacianos:
+            for seed in (42, 7):
+                asig = self._embedding_k(L, n, k_eff, semilla=seed)
+                perd, dist = self._evaluar_k_particion(asig, nodos)
+                res = _ResultadoParticionK(perdida=perd, distribucion=dist, asignacion=asig, nodos=nodos)
+                res = self._refinar_k_local(res, k_eff, nodos)
+                if res.perdida < mejor.perdida:
+                    mejor = res
+
+        rng = np.random.default_rng(0xBEEF)
+        for _ in range(3):
+            asig = self._canonicalizar_asignacion(
+                tuple(int(rng.integers(0, k_eff)) for _ in range(n))
+            )
+            if len(set(asig)) < 2:
+                continue
+            perd, dist = self._evaluar_k_particion(asig, nodos)
+            res = _ResultadoParticionK(perdida=perd, distribucion=dist, asignacion=asig, nodos=nodos)
+            res = self._refinar_k_local(res, k_eff, nodos)
+            if res.perdida < mejor.perdida:
+                mejor = res
+
+        return mejor
+
+    def _embedding_k(self, L: np.ndarray, n: int, k: int, semilla: int = 42) -> tuple[int, ...]:
         """Proyecta nodos en los k primeros eigenvectores y aplica k-means."""
         if n <= 1:
             return (0,) * n
-
         try:
             eigenvalores, eigenvectores = np.linalg.eigh(L)
         except np.linalg.LinAlgError:
             return self._canonicalizar_asignacion(tuple(i % k for i in range(n)))
 
         orden = np.argsort(eigenvalores)
-        # Eigenvectores 1..k (ignora el trivial 0).
         embedding = eigenvectores[:, orden[1:k]]
 
-        asignacion = self._kmeans(embedding, k)
+        asignacion = self._kmeans(embedding, k, semilla=semilla)
         asignacion = self._canonicalizar_asignacion(asignacion)
-
         if len(set(asignacion)) < 2:
             asignacion = self._canonicalizar_asignacion(tuple(i % k for i in range(n)))
-
         return asignacion
 
-    def _kmeans(self, X: np.ndarray, k: int, max_iter: int = 60) -> tuple[int, ...]:
-        """K-means con inicializacion kmeans++ sobre las filas de X."""
+    def _kmeans(self, X: np.ndarray, k: int, max_iter: int = 60, semilla: int = 42) -> tuple[int, ...]:
+        """K-means++ sobre las filas de X."""
         n = X.shape[0]
         if k >= n:
             return tuple(range(n))
 
-        rng = np.random.default_rng(42)
+        rng = np.random.default_rng(semilla)
         centros_idx = [int(rng.integers(0, n))]
         for _ in range(k - 1):
             dists_min = np.min(
-                np.stack([np.sum((X - X[c]) ** 2, axis=1) for c in centros_idx]),
-                axis=0,
+                np.stack([np.sum((X - X[c]) ** 2, axis=1) for c in centros_idx]), axis=0
             )
             dists_min[centros_idx] = 0.0
             total = dists_min.sum()
             if total == 0.0:
                 break
-            probs = dists_min / total
-            centros_idx.append(int(rng.choice(n, p=probs)))
+            centros_idx.append(int(rng.choice(n, p=dists_min / total)))
 
         centros = X[centros_idx].copy()
         etiquetas = np.zeros(n, dtype=np.int32)
@@ -496,7 +611,7 @@ class Circuito(SIA):
         return tuple(int(e) for e in etiquetas.tolist())
 
     # ------------------------------------------------------------------
-    # Evaluacion de particiones
+    # Evaluación de particiones
     # ------------------------------------------------------------------
 
     def _evaluar_particion(
@@ -562,15 +677,10 @@ class Circuito(SIA):
             if not vecinos:
                 break
             mejor_vecino = actual
-            for subalcance, submecanismo in vecinos:
-                perdida, distribucion = self._evaluar_particion(subalcance, submecanismo)
-                if perdida < mejor_vecino.perdida:
-                    mejor_vecino = _ResultadoParticion(
-                        perdida=perdida,
-                        distribucion=distribucion,
-                        subalcance=subalcance,
-                        submecanismo=submecanismo,
-                    )
+            for sa, sm in vecinos:
+                perd, dist = self._evaluar_particion(sa, sm)
+                if perd < mejor_vecino.perdida:
+                    mejor_vecino = _ResultadoParticion(perdida=perd, distribucion=dist, subalcance=sa, submecanismo=sm)
             if mejor_vecino.perdida + 1e-12 >= actual.perdida:
                 break
             actual = mejor_vecino
@@ -621,15 +731,10 @@ class Circuito(SIA):
             if not vecinos:
                 break
             mejor_vecino = actual
-            for asignacion_vec in vecinos:
-                perdida, distribucion = self._evaluar_k_particion(asignacion_vec, nodos)
-                if perdida < mejor_vecino.perdida:
-                    mejor_vecino = _ResultadoParticionK(
-                        perdida=perdida,
-                        distribucion=distribucion,
-                        asignacion=asignacion_vec,
-                        nodos=nodos,
-                    )
+            for asig in vecinos:
+                perd, dist = self._evaluar_k_particion(asig, nodos)
+                if perd < mejor_vecino.perdida:
+                    mejor_vecino = _ResultadoParticionK(perdida=perd, distribucion=dist, asignacion=asig, nodos=nodos)
             if mejor_vecino.perdida + 1e-12 >= actual.perdida:
                 break
             actual = mejor_vecino
@@ -666,5 +771,4 @@ class Circuito(SIA):
         return tuple(resultado)
 
 
-# Alias retrocompatible.
 ElectricNetwork = Circuito
