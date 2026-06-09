@@ -485,12 +485,10 @@ class BuscadorKRecocido(BuscadorKParticion):
         return refinado if refinado.perdida <= resultado_sa.perdida else resultado_sa
 
     def _multi_recocido(self, k: int, semilla: int) -> ResultadoKParticion:
-        """Corre ``n_cadenas`` corridas SA independientes y retorna la mejor.
+        """Corre ``n_cadenas`` corridas SA secuenciales y retorna la mejor.
 
         Cada cadena arranca desde un punto aleatorio distinto (semillas
-        separadas por 1009 para evitar correlaciones). La caché compartida
-        de ``evaluar_asignacion`` hace que las cadenas posteriores sean más
-        rápidas que la primera.
+        separadas por 1009 para evitar correlaciones).
 
         Parámetros
         ----------
@@ -504,15 +502,9 @@ class BuscadorKRecocido(BuscadorKParticion):
         ResultadoKParticion
             Mejor resultado entre todas las cadenas SA.
         """
-        mejor = self._recocido(k, semilla)
-        if mejor.perdida <= 1e-12:
-            return mejor
-        for i in range(1, self.n_cadenas):
-            candidato = self._recocido(k, semilla + i * 1009)
-            if candidato.perdida < mejor.perdida:
-                mejor = candidato
-            if mejor.perdida <= 1e-12:
-                break
+        semillas = [semilla + i * 1009 for i in range(self.n_cadenas)]
+        resultados = [self._recocido(k, s) for s in semillas]
+        mejor = min(resultados, key=lambda r: r.perdida)
         return mejor
 
 
@@ -724,8 +716,8 @@ class BuscadorKDP(BuscadorKRecocido):
                         )
             temp *= self.factor_enfriamiento
 
-        for i in range(1, self.n_cadenas):
-            candidato = self._recocido(k, semilla + i * 1009)
+        for s in [semilla + i * 1009 for i in range(1, self.n_cadenas)]:
+            candidato = self._recocido(k, s)
             if candidato.perdida < mejor.perdida:
                 mejor = candidato
         return mejor

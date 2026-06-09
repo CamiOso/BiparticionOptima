@@ -98,6 +98,7 @@ class QNodos(SIA):
         self.clave_submodular: list[list[int]] = [[], []]
         self.vertices: set[tuple[int, int]] = set()
         self._cache_k_particiones: dict[tuple[int, ...], tuple[float, np.ndarray]] = {}
+        self._subsistema_key: tuple[str, str, str, str] | None = None
 
     def aplicar_estrategia(
         self,
@@ -125,7 +126,10 @@ class QNodos(SIA):
         self.vertices = set(vertices)
 
         if k > 2:
-            self._cache_k_particiones.clear()
+            nueva_key = (estado_inicial, condicion, alcance, mecanismo)
+            if nueva_key != self._subsistema_key:
+                self._cache_k_particiones.clear()
+                self._subsistema_key = nueva_key
             # Warm-start 1: arbol de contracciones — para despues de n-k pasos de Queyranne.
             semilla_asig = self._k_particion_arbol_contracciones(vertices, k)
             # Warm-start 2 (fallback): particion recursiva Q con memoizacion DP.

@@ -111,6 +111,7 @@ class Geometric(SIA):
         self._usar_paralelizacion_costos = True
         self._umbral_paralelizacion_mascaras = 96
         self._max_workers_costos = max(1, (os.cpu_count() or 2) - 1)
+        self._umbral_dp = 12
         self._cache_particiones: dict[
             tuple[tuple[int, ...], tuple[int, ...]],
             tuple[float, np.ndarray],
@@ -119,6 +120,8 @@ class Geometric(SIA):
             tuple[int, ...],
             tuple[float, np.ndarray],
         ] = {}
+        self._ultimo_asig: tuple[int, ...] | None = None
+        self._subsistema_key: tuple[str, str] | None = None
 
     def aplicar_estrategia(
         self,
@@ -136,8 +139,14 @@ class Geometric(SIA):
         assert self.sia_subsistema is not None
         assert self.sia_dists_marginales is not None
 
+        # Detectar cambio de subsistema para invalidar estado cruzado entre k's.
+        nueva_key = (estado_inicial, condicion, alcance, mecanismo)
+        if nueva_key != self._subsistema_key:
+            self._ultimo_asig = None
+            self._cache_k_particiones.clear()
+            self._subsistema_key = nueva_key
+
         self._cache_particiones.clear()
-        self._cache_k_particiones.clear()
         _ = self._tpm_a_tensores_elementales()
 
         alcance_total = tuple(int(v) for v in self.sia_subsistema.indices_ncubos.tolist())
@@ -155,18 +164,28 @@ class Geometric(SIA):
 
         if k > 2:
             nodos = sorted(set(alcance_total) | set(mecanismo_total))
-            _, _, costos_locales, _ = self._precalcular_busqueda_geometrica(
-                alcance_total, mecanismo_total
-            )
-            # Warm-start 1: dendrograma divisivo — jerarquia de cortes optimos.
-            semilla_k = self._resolver_k_dendrograma(
-                nodos, alcance_total, mecanismo_total, k
-            )
-            # Warm-start 2 (fallback): mascara de mejor biparticion del hipercubo.
-            if semilla_k is None:
-                semilla_k = self._semilla_desde_biparticion(
-                    nodos, alcance_total, mecanismo_total, costos_locales
+            n_nodos = len(nodos)
+
+            if n_nodos > self._umbral_dp:
+                # Para n > umbral_dp el DP y el dendrograma son inviables (~2^n).
+                # Omitir precálculo y usar la asignación k-1 almacenada como semilla.
+                costos_locales = None
+                if self._ultimo_asig is not None and len(self._ultimo_asig) == n_nodos:
+                    semilla_k = self._extender_asig_previo(self._ultimo_asig, k)
+                else:
+                    semilla_k = None
+            else:
+                _, _, costos_locales, _ = self._precalcular_busqueda_geometrica(
+                    alcance_total, mecanismo_total
                 )
+                semilla_k = self._resolver_k_dendrograma(
+                    nodos, alcance_total, mecanismo_total, k
+                )
+                if semilla_k is None:
+                    semilla_k = self._semilla_desde_biparticion(
+                        nodos, alcance_total, mecanismo_total, costos_locales
+                    )
+
             buscador = _BuscadorKGeometric(
                 nodos=nodos,
                 sistema=self.sia_subsistema,
@@ -182,6 +201,8 @@ class Geometric(SIA):
                 )
             else:
                 resultado_k = buscador.buscar(k, semilla=aplicacion.semilla_numpy)
+
+            self._ultimo_asig = resultado_k.asignacion
             return Solucion(
                 estrategia=GEOMETRIC_LABEL,
                 perdida=resultado_k.perdida,
@@ -204,6 +225,15 @@ class Geometric(SIA):
                 mejor = self._resolver_exacto(alcance_total, mecanismo_total)
             else:
                 mejor = self._resolver_geometrico_refinado(alcance_total, mecanismo_total)
+
+        # Guardar asignación k=2 como warm-start para k=3.
+        nodos_k2 = sorted(set(alcance_total) | set(mecanismo_total))
+        if nodos_k2:
+            nodos_izq = set(mejor.subalcance) | set(mejor.submecanismo)
+            asig_k2 = tuple(0 if n in nodos_izq else 1 for n in nodos_k2)
+            canon = self.canonicalizar(asig_k2)
+            if len(set(canon)) >= 2:
+                self._ultimo_asig = canon
 
         return Solucion(
             estrategia=GEOMETRIC_LABEL,
@@ -1194,6 +1224,29 @@ class Geometric(SIA):
                 siguiente += 1
             canon.append(mapa[grupo])
         return tuple(canon)
+
+    def _extender_asig_previo(self, asig_prev: tuple[int, ...], k: int) -> tuple[int, ...] | None:
+        """Extiende asignacion de m grupos a k grupos dividiendo el grupo mas grande.
+
+        Warm-start para k>2: convierte la mejor asignacion k-1 en una k-asignacion
+        asignando el primer elemento del grupo mas grande a un nuevo grupo.
+        """
+        asig = list(asig_prev)
+        while max(asig) + 1 < k:
+            conteos: dict[int, int] = {}
+            for g in asig:
+                conteos[g] = conteos.get(g, 0) + 1
+            if max(conteos.values()) <= 1:
+                break
+            grupo_a_dividir = max(conteos, key=lambda g: conteos[g])
+            nuevo_grupo = max(asig) + 1
+            for i in range(len(asig)):
+                if asig[i] == grupo_a_dividir:
+                    asig[i] = nuevo_grupo
+                    break
+        resultado = tuple(asig)
+        canon = self.canonicalizar(resultado)
+        return canon if len(set(canon)) >= 2 else None
 
 
 # Alias en espanol para conservar consistencia del proyecto.

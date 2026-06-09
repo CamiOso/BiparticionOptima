@@ -183,14 +183,16 @@ if __name__ == "__main__":
     # -------------------------------------------------------------------------
 
     mec_n = len(mec_letras)
-    if mec_n <= 13:
-        _cn, _cs = 512, 1024
+    if mec_n <= 12:
+        _cn, _cs = 4096, 8192
+    elif mec_n <= 13:
+        _cn, _cs = 8192, 16384
     elif mec_n <= 17:
-        _cn, _cs = 128, 512
+        _cn, _cs = 128,  512
     elif mec_n <= 20:
-        _cn, _cs = 64,  256
+        _cn, _cs = 64,   256
     else:
-        _cn, _cs = 32,  128
+        _cn, _cs = 32,   128
     import src.modelos.nucleo.ncubo   as _ncubo_mod
     import src.modelos.nucleo.sistema as _sistema_mod
     _ncubo_mod._MAX_MEMO_NCUBE   = _cn
