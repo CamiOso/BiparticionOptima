@@ -51,10 +51,12 @@ class Louvain(SIA):
         tpm: np.ndarray,
         config=None,
         max_iteraciones: int = 50,
+        n_random_restarts: int = 8,
     ) -> None:
         super().__init__(tpm, config)
         self.distancia_metrica = seleccionar_emd(config)
         self.max_iteraciones = max_iteraciones
+        self.n_random_restarts = n_random_restarts
 
     # ------------------------------------------------------------------
     # Puerto SIA
@@ -89,17 +91,38 @@ class Louvain(SIA):
                 particion="NO-PARTITION",
             )
 
-        asig = self._louvain(W, k_eff)
-        asig, perdida, dist = self._refinar_local(nodos, asig, k_eff)
+        # Solución semilla vía modularidad (Louvain)
+        asig_seed = self._louvain(W, k_eff)
+        asig_seed, _, _ = self._refinar_local(nodos, asig_seed, k_eff)
 
-        particion_str = self._formatear(asig, nodos, alcance_total, mecanismo_total, k_eff)
+        if k_eff == 2:
+            # Para k=2 se usa el espacio completo de biparticiones (bipartir),
+            # donde subalcance y submecanismo son independientes. La semilla
+            # Louvain (k_bipartir, más restringida) se añade como un arranque más.
+            grupo0 = {nodos[i] for i, g in enumerate(asig_seed) if g == 0}
+            seed_alc = tuple(v for v in alcance_total if v in grupo0)
+            seed_mec = tuple(v for v in mecanismo_total if v in grupo0)
+            subalc, submec, perdida, dist = self._multistart_k2(
+                alcance_total, mecanismo_total, seed_alc, seed_mec
+            )
+            return Solucion(
+                estrategia=LOUVAIN_LABEL,
+                perdida=perdida,
+                distribucion_subsistema=self.sia_dists_marginales,
+                distribucion_particion=dist,
+                estado_inicial=estado_inicial,
+                particion=fmt_biparticion(subalc, submec, alcance_total, mecanismo_total),
+            )
+
+        # k > 2: semilla Louvain + reinicios aleatorios en espacio k_bipartir
+        asig, perdida, dist = self._multistart_kn(nodos, k_eff, asig_seed)
         return Solucion(
             estrategia=LOUVAIN_LABEL,
             perdida=perdida,
             distribucion_subsistema=self.sia_dists_marginales,
             distribucion_particion=dist,
             estado_inicial=estado_inicial,
-            particion=particion_str,
+            particion=self._formatear(asig, nodos, alcance_total, mecanismo_total, k_eff),
         )
 
     # ------------------------------------------------------------------
@@ -321,6 +344,164 @@ class Louvain(SIA):
                 break
 
         return mejor_asig, mejor_perdida, mejor_dist
+
+    # ------------------------------------------------------------------
+    # Multi-start con objetivo φ directo
+    # ------------------------------------------------------------------
+
+    def _evaluar_bipartir(
+        self,
+        subalcance: tuple[int, ...],
+        submecanismo: tuple[int, ...],
+    ) -> tuple[float, np.ndarray]:
+        """Evalúa con bipartir (espacio completo: subalcance y submecanismo independientes)."""
+        assert self.sia_subsistema is not None
+        assert self.sia_dists_marginales is not None
+        sp = self.sia_subsistema.bipartir(
+            np.array(list(subalcance), dtype=np.int8),
+            np.array(list(submecanismo), dtype=np.int8),
+        )
+        dist = sp.distribucion_marginal()
+        ref = self.sia_dists_marginales
+        if dist.size != ref.size:
+            alineada = np.zeros_like(ref)
+            alineada[: dist.size] = dist
+            dist = alineada
+        return float(self.distancia_metrica(ref, dist)), dist
+
+    def _refinar_bipartir(
+        self,
+        subalc: tuple[int, ...],
+        submec: tuple[int, ...],
+        perdida: float,
+        dist: np.ndarray,
+        alc_total: tuple[int, ...],
+        mec_total: tuple[int, ...],
+        max_iter: int = 24,
+    ) -> tuple[tuple[int, ...], tuple[int, ...], float, np.ndarray]:
+        """Descenso más pronunciado en el espacio bipartir: evalúa todos los vecinos y elige el mejor."""
+        for _ in range(max_iter):
+            mejor_ca, mejor_cm, mejor_p, mejor_d = subalc, submec, perdida, dist
+
+            for nodo in alc_total:
+                nuevo = set(subalc)
+                nuevo.symmetric_difference_update({nodo})
+                ca = tuple(v for v in alc_total if v in nuevo)
+                if not ca and not submec:
+                    continue
+                if ca == alc_total and submec == mec_total:
+                    continue
+                p, d = self._evaluar_bipartir(ca, submec)
+                if p < mejor_p - 1e-12:
+                    mejor_ca, mejor_cm, mejor_p, mejor_d = ca, submec, p, d
+
+            for nodo in mec_total:
+                nuevo = set(submec)
+                nuevo.symmetric_difference_update({nodo})
+                cm = tuple(v for v in mec_total if v in nuevo)
+                if not subalc and not cm:
+                    continue
+                if subalc == alc_total and cm == mec_total:
+                    continue
+                p, d = self._evaluar_bipartir(subalc, cm)
+                if p < mejor_p - 1e-12:
+                    mejor_ca, mejor_cm, mejor_p, mejor_d = subalc, cm, p, d
+
+            if mejor_p + 1e-12 >= perdida:
+                break
+            subalc, submec, perdida, dist = mejor_ca, mejor_cm, mejor_p, mejor_d
+
+        return subalc, submec, perdida, dist
+
+    def _multistart_k2(
+        self,
+        alc_total: tuple[int, ...],
+        mec_total: tuple[int, ...],
+        seed_alc: tuple[int, ...] | None = None,
+        seed_mec: tuple[int, ...] | None = None,
+    ) -> tuple[tuple[int, ...], tuple[int, ...], float, np.ndarray]:
+        """Reinicios aleatorios en el espacio bipartir completo (objetivo φ directo)."""
+        assert self.sia_dists_marginales is not None
+        n_alc, n_mec = len(alc_total), len(mec_total)
+        rng = np.random.default_rng(42)
+
+        mejor_perdida = float("inf")
+        mejor_subalc: tuple[int, ...] = (alc_total[0],) if alc_total else ()
+        mejor_submec: tuple[int, ...] = ()
+        mejor_dist = self.sia_dists_marginales.copy()
+
+        # Incluir semilla Louvain (del espacio k_bipartir) como punto de partida
+        starts: list[tuple[tuple[int, ...], tuple[int, ...]]] = []
+        if seed_alc is not None and (seed_alc or seed_mec):
+            if not (seed_alc == alc_total and seed_mec == mec_total):
+                starts.append((seed_alc, seed_mec))
+
+        for _ in range(self.n_random_restarts):
+            for _intento in range(20):
+                alc_mask = rng.integers(0, 2, n_alc).astype(bool)
+                mec_mask = rng.integers(0, 2, n_mec).astype(bool)
+                sa = tuple(alc_total[i] for i in range(n_alc) if alc_mask[i])
+                sm = tuple(mec_total[j] for j in range(n_mec) if mec_mask[j])
+                if (sa or sm) and not (sa == alc_total and sm == mec_total):
+                    starts.append((sa, sm))
+                    break
+
+        for sa, sm in starts:
+            p, d = self._evaluar_bipartir(sa, sm)
+            sa, sm, p, d = self._refinar_bipartir(sa, sm, p, d, alc_total, mec_total)
+            if p < mejor_perdida:
+                mejor_perdida, mejor_subalc, mejor_submec, mejor_dist = p, sa, sm, d
+
+        return mejor_subalc, mejor_submec, mejor_perdida, mejor_dist
+
+    def _multistart_kn(
+        self,
+        nodos: list[int],
+        k: int,
+        seed_asig: tuple[int, ...] | None = None,
+    ) -> tuple[tuple[int, ...], float, np.ndarray]:
+        """Reinicios aleatorios en espacio k_bipartir (objetivo φ directo)."""
+        assert self.sia_dists_marginales is not None
+        n = len(nodos)
+        rng = np.random.default_rng(42)
+
+        # Evaluar semilla
+        if seed_asig is not None and len(set(seed_asig)) >= 2:
+            mejor_asig = seed_asig
+            mejor_perdida, mejor_dist = self._evaluar(nodos, seed_asig)
+        else:
+            mejor_asig = tuple(i % k for i in range(n))
+            mejor_perdida, mejor_dist = self._evaluar(nodos, mejor_asig)
+
+        for _ in range(self.n_random_restarts):
+            base = list(range(k))
+            resto = [int(rng.integers(0, k)) for _ in range(max(0, n - k))]
+            nueva = base + resto
+            rng.shuffle(nueva)
+            nueva_t = self._canonicalizar_kn(tuple(nueva))
+            if len(set(nueva_t)) < 2:
+                continue
+            nueva_t, p, d = self._refinar_local(nodos, nueva_t, k)
+            if p < mejor_perdida:
+                mejor_perdida, mejor_asig, mejor_dist = p, nueva_t, d
+
+        return mejor_asig, mejor_perdida, mejor_dist
+
+    @staticmethod
+    def _canonicalizar_kn(asig: tuple[int, ...]) -> tuple[int, ...]:
+        mapa: dict[int, int] = {}
+        sig = 0
+        res = []
+        for g in asig:
+            if g not in mapa:
+                mapa[g] = sig
+                sig += 1
+            res.append(mapa[g])
+        return tuple(res)
+
+    # ------------------------------------------------------------------
+    # Formateo
+    # ------------------------------------------------------------------
 
     def _formatear(
         self,

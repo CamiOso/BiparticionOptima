@@ -1,3 +1,5 @@
+import threading
+
 import numpy as np
 from numpy.typing import NDArray
 
@@ -16,6 +18,16 @@ class Sistema:
         self.estado_inicial = estado_inicio
         self.ncubos = self._crear_ncubos(tpm)
         self.memo: dict[tuple[tuple[int, ...], tuple[int, ...]], tuple[NCube, ...]] = {}
+        self._lock = threading.Lock()
+
+    def __getstate__(self) -> dict:
+        return {"estado_inicial": self.estado_inicial, "ncubos": self.ncubos, "memo": {}}
+
+    def __setstate__(self, state: dict) -> None:
+        self.estado_inicial = state["estado_inicial"]
+        self.ncubos = state["ncubos"]
+        self.memo = state["memo"]
+        self._lock = threading.Lock()
 
     @classmethod
     def _from_cubes(
@@ -27,6 +39,7 @@ class Sistema:
         instancia.estado_inicial = estado_inicio
         instancia.ncubos = cubos
         instancia.memo = {}
+        instancia._lock = threading.Lock()
         return instancia
 
     def _crear_ncubos(self, tpm: np.ndarray) -> tuple[NCube, ...]:
@@ -91,24 +104,28 @@ class Sistema:
     ) -> "Sistema":
         """Genera una biparticion replicando la semantica del sistema de referencia."""
         clave = (tuple(int(v) for v in alcance_preservado), tuple(int(v) for v in mecanismo_preservado))
-        memo = getattr(self, "memo", {})
-        if clave not in memo:
-            if len(memo) >= _MAX_MEMO_SISTEMA:
-                for k in list(memo.keys())[: _MAX_MEMO_SISTEMA // 2]:
-                    del memo[k]
-            # Pre-computar sets para lookups O(1) en vez de O(n) con arrays numpy
-            alc_set = {int(v) for v in alcance_preservado}
-            mec_set = {int(v) for v in mecanismo_preservado}
-            memo[clave] = tuple(
-                cubo.marginalizar(
-                    np.array([d for d in cubo.dims if int(d) not in mec_set], dtype=np.int8)
-                )
-                if int(cubo.indice) in alc_set
-                else cubo.marginalizar(mecanismo_preservado)
-                for cubo in self.ncubos
+        resultado = self.memo.get(clave)
+        if resultado is not None:
+            return Sistema._from_cubes(self.estado_inicial, resultado)
+
+        # Pre-computar sets para lookups O(1) en vez de O(n) con arrays numpy
+        alc_set = {int(v) for v in alcance_preservado}
+        mec_set = {int(v) for v in mecanismo_preservado}
+        computed = tuple(
+            cubo.marginalizar(
+                np.array([d for d in cubo.dims if int(d) not in mec_set], dtype=np.int8)
             )
-        self.memo = memo
-        return Sistema._from_cubes(self.estado_inicial, memo[clave])
+            if int(cubo.indice) in alc_set
+            else cubo.marginalizar(mecanismo_preservado)
+            for cubo in self.ncubos
+        )
+        with self._lock:
+            if clave not in self.memo:
+                if len(self.memo) >= _MAX_MEMO_SISTEMA:
+                    for k in list(self.memo.keys())[: _MAX_MEMO_SISTEMA // 2]:
+                        del self.memo[k]
+                self.memo[clave] = computed
+        return Sistema._from_cubes(self.estado_inicial, self.memo[clave])
 
     def k_bipartir(self, nodos: list[int], asignacion: tuple[int, ...]) -> "Sistema":
         """Genera una K-particion aislando las conexiones dentro de cada grupo.
@@ -119,23 +136,27 @@ class Sistema:
         """
         nodo_grupo = {nodos[idx]: asignacion[idx] for idx in range(len(nodos))}
         clave = ("k", tuple(sorted(nodo_grupo.items())))
-        memo = getattr(self, "memo", {})
-        if clave not in memo:
-            if len(memo) >= _MAX_MEMO_SISTEMA:
-                for k in list(memo.keys())[: _MAX_MEMO_SISTEMA // 2]:
-                    del memo[k]
-            nuevos_cubos = []
-            for cubo in self.ncubos:
-                g_i = nodo_grupo.get(int(cubo.indice), 0)
-                dims_mismo_grupo = np.array(
-                    [int(d) for d in cubo.dims.tolist() if nodo_grupo.get(int(d), 0) == g_i],
-                    dtype=np.int8,
-                )
-                dims_a_marginalizar = np.setdiff1d(cubo.dims, dims_mismo_grupo)
-                nuevos_cubos.append(cubo.marginalizar(dims_a_marginalizar))
-            memo[clave] = tuple(nuevos_cubos)
-        self.memo = memo
-        return Sistema._from_cubes(self.estado_inicial, memo[clave])
+        resultado = self.memo.get(clave)
+        if resultado is not None:
+            return Sistema._from_cubes(self.estado_inicial, resultado)
+
+        nuevos_cubos = []
+        for cubo in self.ncubos:
+            g_i = nodo_grupo.get(int(cubo.indice), 0)
+            dims_mismo_grupo = np.array(
+                [int(d) for d in cubo.dims.tolist() if nodo_grupo.get(int(d), 0) == g_i],
+                dtype=np.int8,
+            )
+            dims_a_marginalizar = np.setdiff1d(cubo.dims, dims_mismo_grupo)
+            nuevos_cubos.append(cubo.marginalizar(dims_a_marginalizar))
+        computed = tuple(nuevos_cubos)
+        with self._lock:
+            if clave not in self.memo:
+                if len(self.memo) >= _MAX_MEMO_SISTEMA:
+                    for k in list(self.memo.keys())[: _MAX_MEMO_SISTEMA // 2]:
+                        del self.memo[k]
+                self.memo[clave] = computed
+        return Sistema._from_cubes(self.estado_inicial, self.memo[clave])
 
     def k_bipartir_temporal(
         self,
@@ -162,27 +183,31 @@ class Sistema:
             tuple(tuple(int(v) for v in grupo) for grupo in grupos_mecanismo),
             tuple(tuple(int(v) for v in grupo) for grupo in grupos_alcance),
         )
-        memo = getattr(self, "memo", {})
-        if clave not in memo:
-            if len(memo) >= _MAX_MEMO_SISTEMA:
-                for k in list(memo.keys())[: _MAX_MEMO_SISTEMA // 2]:
-                    del memo[k]
-            nuevos_cubos = []
-            for cubo in self.ncubos:
-                grupo_futuro = alcance_a_grupo.get(int(cubo.indice), -1)
-                dims_mismo_grupo = np.array(
-                    [
-                        int(d)
-                        for d in cubo.dims.tolist()
-                        if mecanismo_a_grupo.get(int(d), -2) == grupo_futuro
-                    ],
-                    dtype=np.int8,
-                )
-                dims_a_marginalizar = np.setdiff1d(cubo.dims, dims_mismo_grupo)
-                nuevos_cubos.append(cubo.marginalizar(dims_a_marginalizar))
-            memo[clave] = tuple(nuevos_cubos)
-        self.memo = memo
-        return Sistema._from_cubes(self.estado_inicial, memo[clave])
+        resultado = self.memo.get(clave)
+        if resultado is not None:
+            return Sistema._from_cubes(self.estado_inicial, resultado)
+
+        nuevos_cubos = []
+        for cubo in self.ncubos:
+            grupo_futuro = alcance_a_grupo.get(int(cubo.indice), -1)
+            dims_mismo_grupo = np.array(
+                [
+                    int(d)
+                    for d in cubo.dims.tolist()
+                    if mecanismo_a_grupo.get(int(d), -2) == grupo_futuro
+                ],
+                dtype=np.int8,
+            )
+            dims_a_marginalizar = np.setdiff1d(cubo.dims, dims_mismo_grupo)
+            nuevos_cubos.append(cubo.marginalizar(dims_a_marginalizar))
+        computed = tuple(nuevos_cubos)
+        with self._lock:
+            if clave not in self.memo:
+                if len(self.memo) >= _MAX_MEMO_SISTEMA:
+                    for k in list(self.memo.keys())[: _MAX_MEMO_SISTEMA // 2]:
+                        del self.memo[k]
+                self.memo[clave] = computed
+        return Sistema._from_cubes(self.estado_inicial, self.memo[clave])
 
     def distribucion_marginal(self) -> NDArray[np.float32]:
         """Calcula P(nodo_i = ON) en el estado inicial para cada n-cubo."""

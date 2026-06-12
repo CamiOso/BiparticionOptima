@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+import threading
 
 import numpy as np
 from numpy.typing import NDArray
@@ -18,10 +19,21 @@ class NCube:
     )
 
     def __post_init__(self) -> None:
+        object.__setattr__(self, "_lock", threading.Lock())
         if self.dims.size and self.data.shape != (2,) * self.dims.size:
             raise ValueError(
                 f"Forma invalida {self.data.shape} para dimensiones {tuple(self.dims)}"
             )
+
+    def __getstate__(self) -> dict:
+        return {"indice": self.indice, "dims": self.dims, "data": self.data, "memo": {}}
+
+    def __setstate__(self, state: dict) -> None:
+        object.__setattr__(self, "indice", state["indice"])
+        object.__setattr__(self, "dims", state["dims"])
+        object.__setattr__(self, "data", state["data"])
+        object.__setattr__(self, "memo", state["memo"])
+        object.__setattr__(self, "_lock", threading.Lock())
 
     def condicionar(
         self,
@@ -48,32 +60,36 @@ class NCube:
 
     def marginalizar(self, ejes: NDArray[np.int8]) -> "NCube":
         key = tuple(int(v) for v in ejes)
-        if key not in self.memo:
-            # Sets de Python son 11-23× más rápidos que np.intersect1d/setdiff1d
-            # para arrays pequeños (tamaño mec, típicamente 10-25 elementos)
-            ejes_set = set(key)
-            dims_list = [int(d) for d in self.dims]
-            marginable_set = ejes_set.intersection(dims_list)
-            if not marginable_set:
-                return self
+        cached = self.memo.get(key)
+        if cached is not None:
+            return NCube(indice=self.indice, dims=cached[1], data=cached[0])
 
-            numero_dims = len(dims_list) - 1
-            ejes_locales = tuple(
-                numero_dims - dim_idx
-                for dim_idx, axis in enumerate(dims_list)
-                if axis in marginable_set
-            )
+        # Sets de Python son 11-23× más rápidos que np.intersect1d/setdiff1d
+        # para arrays pequeños (tamaño mec, típicamente 10-25 elementos)
+        ejes_set = set(key)
+        dims_list = [int(d) for d in self.dims]
+        marginable_set = ejes_set.intersection(dims_list)
+        if not marginable_set:
+            return self
 
-            new_dims = np.array(
-                [d for d in dims_list if d not in marginable_set],
-                dtype=np.int8,
-            )
+        numero_dims = len(dims_list) - 1
+        ejes_locales = tuple(
+            numero_dims - dim_idx
+            for dim_idx, axis in enumerate(dims_list)
+            if axis in marginable_set
+        )
+        new_dims = np.array(
+            [d for d in dims_list if d not in marginable_set],
+            dtype=np.int8,
+        )
+        data_marginal = np.mean(self.data, axis=ejes_locales, keepdims=False)
 
-            data_marginal = np.mean(self.data, axis=ejes_locales, keepdims=False)
-            if len(self.memo) >= _MAX_MEMO_NCUBE:
-                for k in list(self.memo.keys())[: _MAX_MEMO_NCUBE // 2]:
-                    del self.memo[k]
-            self.memo[key] = (data_marginal, new_dims)
+        with self._lock:
+            if key not in self.memo:
+                if len(self.memo) >= _MAX_MEMO_NCUBE:
+                    for k in list(self.memo.keys())[: _MAX_MEMO_NCUBE // 2]:
+                        del self.memo[k]
+                self.memo[key] = (data_marginal, new_dims)
 
         return NCube(
             indice=self.indice,

@@ -64,10 +64,17 @@ class ParticionHiperbolica(SIA):
     5. Refinamiento local (flip de un nodo a la vez).
     """
 
-    def __init__(self, tpm: np.ndarray, config=None, n_angulos: int = 32) -> None:
+    def __init__(
+        self,
+        tpm: np.ndarray,
+        config=None,
+        n_angulos: int = 32,
+        n_random_restarts: int = 8,
+    ) -> None:
         super().__init__(tpm, config)
         self.distancia_metrica = seleccionar_emd(config)
         self.n_angulos = n_angulos
+        self.n_random_restarts = n_random_restarts
         self._max_iter_refinamiento = 24
         self._cache_particiones: dict[tuple, tuple[float, np.ndarray]] = {}
         self._cache_k_particiones: dict[tuple, tuple[float, np.ndarray]] = {}
@@ -123,6 +130,8 @@ class ParticionHiperbolica(SIA):
             )
 
         mejor = self._resolver_biparticion(nodos, alc_total, mec_total)
+        # Reinicios aleatorios con objetivo φ para escapar mínimos locales
+        mejor = self._multistart_k2(mejor, alc_total, mec_total)
         return Solucion(
             estrategia=HIPERBOLICA_LABEL,
             perdida=mejor.perdida,
@@ -520,6 +529,40 @@ class ParticionHiperbolica(SIA):
         p = float(self.distancia_metrica(self.sia_dists_marginales, d))
         self._cache_k_particiones[asignacion] = (p, d)
         return p, d
+
+    # ------------------------------------------------------------------
+    # Multi-start con objetivo φ directo (reinicios aleatorios)
+    # ------------------------------------------------------------------
+
+    def _multistart_k2(
+        self,
+        mejor_hasta_ahora: _ResultadoParticion,
+        alc_total: tuple[int, ...],
+        mec_total: tuple[int, ...],
+    ) -> _ResultadoParticion:
+        """Prueba n_random_restarts puntos aleatorios en el espacio bipartir y refina cada uno."""
+        assert self.sia_dists_marginales is not None
+        n_alc, n_mec = len(alc_total), len(mec_total)
+        rng = np.random.default_rng(42)
+        mejor = mejor_hasta_ahora
+
+        for _ in range(self.n_random_restarts):
+            for _intento in range(20):
+                alc_mask = rng.integers(0, 2, n_alc).astype(bool)
+                mec_mask = rng.integers(0, 2, n_mec).astype(bool)
+                sa = tuple(alc_total[i] for i in range(n_alc) if alc_mask[i])
+                sm = tuple(mec_total[j] for j in range(n_mec) if mec_mask[j])
+                if (sa or sm) and not (sa == alc_total and sm == mec_total):
+                    break
+            else:
+                continue
+            p, d = self._evaluar_particion(sa, sm)
+            candidato = _ResultadoParticion(p, d, sa, sm)
+            candidato = self._refinar_local(candidato, alc_total, mec_total)
+            if candidato.perdida < mejor.perdida:
+                mejor = candidato
+
+        return mejor
 
     # ------------------------------------------------------------------
     # Refinamiento local
