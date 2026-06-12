@@ -139,6 +139,7 @@ if __name__ == "__main__":
     parser.add_argument("fila", type=int)
     parser.add_argument("--start-k", type=int, default=2, choices=[2, 3, 4, 5])
     parser.add_argument("--end-k",   type=int, default=5, choices=[2, 3, 4, 5])
+    parser.add_argument("--no-cache", action="store_true", help="Ignorar mec-cache y calcular independientemente")
     args = parser.parse_args()
     fila_idx = args.fila
     alc_letras, mec_letras = FILAS[fila_idx]
@@ -147,9 +148,9 @@ if __name__ == "__main__":
     mec_key    = "".join(sorted(mec_letras))
     alc_n_val  = len(alc_letras)
     mec_n_val  = len(mec_letras)
-    es_referencia = (alc_n_val > mec_n_val)  # solo beneficiarias poblan el cache
+    es_referencia = (alc_n_val > mec_n_val) and not args.no_cache
 
-    if alc_n_val > mec_n_val:
+    if alc_n_val > mec_n_val and not args.no_cache:
         cache_data: dict = {}
         if os.path.exists(MEC_CACHE):
             try:

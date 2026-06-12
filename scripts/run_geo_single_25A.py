@@ -117,7 +117,7 @@ if __name__ == "__main__":
     elif mec_n <= 13:
         _cn, _cs = 8192, 16384
     elif mec_n <= 17:
-        _cn, _cs = 128,  512
+        _cn, _cs = 1024, 2048
     elif mec_n <= 20:
         _cn, _cs = 64,   256
     else:
@@ -132,7 +132,6 @@ if __name__ == "__main__":
     print(f"[fila={fila_idx}] Cargando TPM...", flush=True)
     tpm = np.memmap(CSV, dtype=np.float32, mode="r", shape=(2**25, 25))
     geo = Geometric(tpm)
-    geo._usar_paralelizacion_costos = False
 
     alc_mask = to_mask(alc_letras)
     mec_mask = to_mask(mec_letras)

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
 import numpy as np
@@ -540,12 +542,12 @@ class ParticionHiperbolica(SIA):
         alc_total: tuple[int, ...],
         mec_total: tuple[int, ...],
     ) -> _ResultadoParticion:
-        """Prueba n_random_restarts puntos aleatorios en el espacio bipartir y refina cada uno."""
+        """Reinicios aleatorios en el espacio bipartir, paralelos con ThreadPoolExecutor."""
         assert self.sia_dists_marginales is not None
         n_alc, n_mec = len(alc_total), len(mec_total)
         rng = np.random.default_rng(42)
-        mejor = mejor_hasta_ahora
 
+        starts: list[tuple[tuple[int, ...], tuple[int, ...]]] = []
         for _ in range(self.n_random_restarts):
             for _intento in range(20):
                 alc_mask = rng.integers(0, 2, n_alc).astype(bool)
@@ -553,12 +555,23 @@ class ParticionHiperbolica(SIA):
                 sa = tuple(alc_total[i] for i in range(n_alc) if alc_mask[i])
                 sm = tuple(mec_total[j] for j in range(n_mec) if mec_mask[j])
                 if (sa or sm) and not (sa == alc_total and sm == mec_total):
+                    starts.append((sa, sm))
                     break
-            else:
-                continue
+
+        if not starts:
+            return mejor_hasta_ahora
+
+        def _evaluar_start(sa_sm: tuple) -> _ResultadoParticion:
+            sa, sm = sa_sm
             p, d = self._evaluar_particion(sa, sm)
-            candidato = _ResultadoParticion(p, d, sa, sm)
-            candidato = self._refinar_local(candidato, alc_total, mec_total)
+            return self._refinar_local(_ResultadoParticion(p, d, sa, sm), alc_total, mec_total)
+
+        n_workers = min(os.cpu_count() or 1, len(starts))
+        with ThreadPoolExecutor(max_workers=n_workers) as executor:
+            resultados = list(executor.map(_evaluar_start, starts))
+
+        mejor = mejor_hasta_ahora
+        for candidato in resultados:
             if candidato.perdida < mejor.perdida:
                 mejor = candidato
 

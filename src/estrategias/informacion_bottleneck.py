@@ -27,6 +27,9 @@ Complejidad: O(n²·k·iter_IB + n·k·iter_local)
 
 from __future__ import annotations
 
+import os
+from concurrent.futures import ThreadPoolExecutor
+
 import numpy as np
 
 from src.constantes.models import IB_LABEL
@@ -366,11 +369,6 @@ class InformacionBottleneck(SIA):
         n_alc, n_mec = len(alc_total), len(mec_total)
         rng = np.random.default_rng(42)
 
-        mejor_perdida = float("inf")
-        mejor_subalc: tuple[int, ...] = (alc_total[0],) if alc_total else ()
-        mejor_submec: tuple[int, ...] = ()
-        mejor_dist = self.sia_dists_marginales.copy()
-
         starts: list[tuple[tuple[int, ...], tuple[int, ...]]] = []
         if seed_alc is not None and (seed_alc or seed_mec):
             if not (seed_alc == alc_total and seed_mec == mec_total):
@@ -386,9 +384,23 @@ class InformacionBottleneck(SIA):
                     starts.append((sa, sm))
                     break
 
-        for sa, sm in starts:
+        if not starts:
+            starts = [((alc_total[0],) if alc_total else (), ())]
+
+        def _evaluar_start(sa_sm: tuple) -> tuple:
+            sa, sm = sa_sm
             p, d = self._evaluar_bipartir(sa, sm)
-            sa, sm, p, d = self._refinar_bipartir(sa, sm, p, d, alc_total, mec_total)
+            return self._refinar_bipartir(sa, sm, p, d, alc_total, mec_total)
+
+        n_workers = min(os.cpu_count() or 1, len(starts))
+        with ThreadPoolExecutor(max_workers=n_workers) as executor:
+            resultados = list(executor.map(_evaluar_start, starts))
+
+        mejor_perdida = float("inf")
+        mejor_subalc: tuple[int, ...] = (alc_total[0],) if alc_total else ()
+        mejor_submec: tuple[int, ...] = ()
+        mejor_dist = self.sia_dists_marginales.copy()
+        for sa, sm, p, d in resultados:
             if p < mejor_perdida:
                 mejor_perdida, mejor_subalc, mejor_submec, mejor_dist = p, sa, sm, d
 
@@ -404,12 +416,9 @@ class InformacionBottleneck(SIA):
         n = len(nodos)
         rng = np.random.default_rng(42)
 
+        asignaciones: list[tuple[int, ...]] = []
         if seed_asig is not None and len(set(seed_asig)) >= 2:
-            mejor_asig = seed_asig
-            mejor_perdida, mejor_dist = self._evaluar(nodos, seed_asig)
-        else:
-            mejor_asig = tuple(i % k for i in range(n))
-            mejor_perdida, mejor_dist = self._evaluar(nodos, mejor_asig)
+            asignaciones.append(seed_asig)
 
         for _ in range(self.n_random_restarts):
             base = list(range(k))
@@ -417,7 +426,6 @@ class InformacionBottleneck(SIA):
             nueva = base + resto
             rng.shuffle(nueva)
             nueva_t: tuple[int, ...] = tuple(nueva)
-            # canonicalizar
             mapa: dict[int, int] = {}
             sig = 0
             canon = []
@@ -427,11 +435,25 @@ class InformacionBottleneck(SIA):
                     sig += 1
                 canon.append(mapa[g])
             nueva_t = tuple(canon)
-            if len(set(nueva_t)) < 2:
-                continue
-            nueva_t, p, d = self._refinar_local(nodos, nueva_t, k)
+            if len(set(nueva_t)) >= 2:
+                asignaciones.append(nueva_t)
+
+        if not asignaciones:
+            asignaciones = [tuple(i % k for i in range(n))]
+
+        def _evaluar_asig(asig: tuple) -> tuple:
+            return self._refinar_local(nodos, asig, k)
+
+        n_workers = min(os.cpu_count() or 1, len(asignaciones))
+        with ThreadPoolExecutor(max_workers=n_workers) as executor:
+            resultados = list(executor.map(_evaluar_asig, asignaciones))
+
+        mejor_asig = asignaciones[0]
+        mejor_perdida = float("inf")
+        mejor_dist = self.sia_dists_marginales.copy()
+        for asig_r, p, d in resultados:
             if p < mejor_perdida:
-                mejor_perdida, mejor_asig, mejor_dist = p, nueva_t, d
+                mejor_perdida, mejor_asig, mejor_dist = p, asig_r, d
 
         return mejor_asig, mejor_perdida, mejor_dist
 

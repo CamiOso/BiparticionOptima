@@ -33,6 +33,9 @@ Complejidad: O(n² · iteraciones) — empíricamente O(n log n) en grafos dispe
 
 from __future__ import annotations
 
+import os
+from concurrent.futures import ThreadPoolExecutor
+
 import numpy as np
 
 from src.constantes.models import LOUVAIN_LABEL
@@ -420,17 +423,11 @@ class Louvain(SIA):
         seed_alc: tuple[int, ...] | None = None,
         seed_mec: tuple[int, ...] | None = None,
     ) -> tuple[tuple[int, ...], tuple[int, ...], float, np.ndarray]:
-        """Reinicios aleatorios en el espacio bipartir completo (objetivo φ directo)."""
+        """Reinicios aleatorios en el espacio bipartir completo, paralelos con ThreadPoolExecutor."""
         assert self.sia_dists_marginales is not None
         n_alc, n_mec = len(alc_total), len(mec_total)
         rng = np.random.default_rng(42)
 
-        mejor_perdida = float("inf")
-        mejor_subalc: tuple[int, ...] = (alc_total[0],) if alc_total else ()
-        mejor_submec: tuple[int, ...] = ()
-        mejor_dist = self.sia_dists_marginales.copy()
-
-        # Incluir semilla Louvain (del espacio k_bipartir) como punto de partida
         starts: list[tuple[tuple[int, ...], tuple[int, ...]]] = []
         if seed_alc is not None and (seed_alc or seed_mec):
             if not (seed_alc == alc_total and seed_mec == mec_total):
@@ -446,9 +443,23 @@ class Louvain(SIA):
                     starts.append((sa, sm))
                     break
 
-        for sa, sm in starts:
+        if not starts:
+            starts = [((alc_total[0],) if alc_total else (), ())]
+
+        def _evaluar_start(sa_sm: tuple) -> tuple:
+            sa, sm = sa_sm
             p, d = self._evaluar_bipartir(sa, sm)
-            sa, sm, p, d = self._refinar_bipartir(sa, sm, p, d, alc_total, mec_total)
+            return self._refinar_bipartir(sa, sm, p, d, alc_total, mec_total)
+
+        n_workers = min(os.cpu_count() or 1, len(starts))
+        with ThreadPoolExecutor(max_workers=n_workers) as executor:
+            resultados = list(executor.map(_evaluar_start, starts))
+
+        mejor_perdida = float("inf")
+        mejor_subalc: tuple[int, ...] = (alc_total[0],) if alc_total else ()
+        mejor_submec: tuple[int, ...] = ()
+        mejor_dist = self.sia_dists_marginales.copy()
+        for sa, sm, p, d in resultados:
             if p < mejor_perdida:
                 mejor_perdida, mejor_subalc, mejor_submec, mejor_dist = p, sa, sm, d
 
@@ -460,18 +471,14 @@ class Louvain(SIA):
         k: int,
         seed_asig: tuple[int, ...] | None = None,
     ) -> tuple[tuple[int, ...], float, np.ndarray]:
-        """Reinicios aleatorios en espacio k_bipartir (objetivo φ directo)."""
+        """Reinicios aleatorios en espacio k_bipartir, paralelos con ThreadPoolExecutor."""
         assert self.sia_dists_marginales is not None
         n = len(nodos)
         rng = np.random.default_rng(42)
 
-        # Evaluar semilla
+        asignaciones: list[tuple[int, ...]] = []
         if seed_asig is not None and len(set(seed_asig)) >= 2:
-            mejor_asig = seed_asig
-            mejor_perdida, mejor_dist = self._evaluar(nodos, seed_asig)
-        else:
-            mejor_asig = tuple(i % k for i in range(n))
-            mejor_perdida, mejor_dist = self._evaluar(nodos, mejor_asig)
+            asignaciones.append(seed_asig)
 
         for _ in range(self.n_random_restarts):
             base = list(range(k))
@@ -479,11 +486,26 @@ class Louvain(SIA):
             nueva = base + resto
             rng.shuffle(nueva)
             nueva_t = self._canonicalizar_kn(tuple(nueva))
-            if len(set(nueva_t)) < 2:
-                continue
-            nueva_t, p, d = self._refinar_local(nodos, nueva_t, k)
+            if len(set(nueva_t)) >= 2:
+                asignaciones.append(nueva_t)
+
+        if not asignaciones:
+            asignaciones = [tuple(i % k for i in range(n))]
+
+        def _evaluar_asig(asig: tuple) -> tuple:
+            asig_r, p, d = self._refinar_local(nodos, asig, k)
+            return asig_r, p, d
+
+        n_workers = min(os.cpu_count() or 1, len(asignaciones))
+        with ThreadPoolExecutor(max_workers=n_workers) as executor:
+            resultados = list(executor.map(_evaluar_asig, asignaciones))
+
+        mejor_asig = asignaciones[0]
+        mejor_perdida = float("inf")
+        mejor_dist = self.sia_dists_marginales.copy()
+        for asig_r, p, d in resultados:
             if p < mejor_perdida:
-                mejor_perdida, mejor_asig, mejor_dist = p, nueva_t, d
+                mejor_perdida, mejor_asig, mejor_dist = p, asig_r, d
 
         return mejor_asig, mejor_perdida, mejor_dist
 

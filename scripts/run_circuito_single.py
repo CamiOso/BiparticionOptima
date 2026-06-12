@@ -130,11 +130,20 @@ if __name__ == "__main__":
     _ncubo_mod._MAX_MEMO_NCUBE = _cn
     _sistema_mod._MAX_MEMO_SISTEMA = _cs
 
-    wb = openpyxl.load_workbook(excel_path)
-    ws = wb[sheet]
-    alc_letras = str(ws.cell(fila_idx, 2).value or "").strip()
-    mec_letras = str(ws.cell(fila_idx, 3).value or "").strip()
-    wb.close()
+    import time as _time_mod
+    for _intento in range(10):
+        try:
+            wb = openpyxl.load_workbook(excel_path)
+            ws = wb[sheet]
+            alc_letras = str(ws.cell(fila_idx, 2).value or "").strip()
+            mec_letras = str(ws.cell(fila_idx, 3).value or "").strip()
+            wb.close()
+            break
+        except Exception:
+            _time_mod.sleep(1.0 + _intento * 0.5)
+    else:
+        print(f"[fila={fila_idx}] No se pudo leer Excel tras 10 intentos, abortando", flush=True)
+        sys.exit(1)
 
     if not alc_letras:
         print(f"[fila={fila_idx}] alcance vacio, abortando", flush=True)
