@@ -351,6 +351,22 @@ PYTHONPATH=. python review/benchmarks/benchmark_geometric.py
 | 5     | 22×                    | Q-Nodos         |
 | 6     | 10×                    | Q-Nodos         |
 
+### Estrategias ML vs QNodos (k=2, φ exacto)
+
+Benchmark sobre sistemas reales N10A, N15B y N20A comparando QNodos contra las
+estrategias ML con multi-start steepest descent paralelizado (`ThreadPoolExecutor`).
+Todas las estrategias minimizan directamente el EMD (φ real), no un sustituto.
+Resultados en `DatosML2026.xlsx`.
+
+| Sistema | n | QNodos (s) | IB (s) | Louvain (s) | Hiperbólica (s) | Variacional (s) | Speedup IB | φ idéntico |
+|---------|---|-----------|--------|-------------|-----------------|-----------------|------------|------------|
+| N10A    | 10 | 2.86     | 0.72   | 0.76        | 0.70            | 0.69            | ×4         | ✓          |
+| N15B    | 15 | 49.0     | 6.0    | 17.0        | 19.9            | 20.7            | ×8         | ✓          |
+| N20A    | 20 | 26 899   | 1 310  | 2 350       | 2 401           | —               | **×20**    | ✓          |
+
+> N20A QNodos tardó **7.5 horas** por caso. A n=20 las estrategias ML son la única
+> opción práctica; a n≥25, QNodos es computacionalmente inviable (días/semanas).
+
 ---
 
 ## Estructura del proyecto
