@@ -358,14 +358,18 @@ estrategias ML con multi-start steepest descent paralelizado (`ThreadPoolExecuto
 Todas las estrategias minimizan directamente el EMD (φ real), no un sustituto.
 Resultados en `DatosML2026.xlsx`.
 
-| Sistema | n | QNodos (s) | IB (s) | Louvain (s) | Hiperbólica (s) | Variacional (s) | Speedup IB | φ idéntico |
-|---------|---|-----------|--------|-------------|-----------------|-----------------|------------|------------|
-| N10A    | 10 | 2.86     | 0.72   | 0.76        | 0.70            | 0.69            | ×4         | ✓          |
-| N15B    | 15 | 49.0     | 6.0    | 17.0        | 19.9            | 20.7            | ×8         | ✓          |
-| N20A    | 20 | 26 899   | 1 310  | 2 350       | 2 401           | —               | **×20**    | ✓          |
+| Sistema | n | QNodos (s) | IB (s) | IBQNodos (s) | Speedup IBQNodos | φ idéntico |
+|---------|---|-----------|--------|--------------|-----------------|------------|
+| N10A    | 10 | 3.52     | 1.50   | **0.67**     | ×5              | ✓          |
+| N15B    | 15 | 154 / 65 / 49 | 6.8 / 4.1 / 4.4 | **3.7 / 0.8 / 0.7** | ×41–82 | ✓ |
+| N20A    | 20 | 26 899 / 10 712 / 11 263 | 803 / 199 / 227 | **93 / 28 / 31** | ×290–385 | ✓ |
 
-> N20A QNodos tardó **7.5 horas** por caso. A n=20 las estrategias ML son la única
-> opción práctica; a n≥25, QNodos es computacionalmente inviable (días/semanas).
+**IBQNodos** (IB seed + QNodos SA refinement) es la estrategia más rápida en todos los
+sistemas probados. En n=20 completa el caso más difícil en **92 segundos** frente a
+las 7.5 horas de QNodos (×290 speedup), manteniendo φ exacto.
+
+> A n≥25, QNodos es computacionalmente inviable (días/semanas). IBQNodos escala
+> a n=22 en minutos con el hardware de escritorio descrito en la hoja `plataformas`.
 
 ---
 
