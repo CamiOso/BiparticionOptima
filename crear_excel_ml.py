@@ -23,11 +23,11 @@ from openpyxl.utils import get_column_letter
 # Configuración
 # ──────────────────────────────────────────────────────────────────────────────
 
-DESTINO = "DatosML2026.xlsx"
+DESTINO = "DatosIBQNodos2026.xlsx"
 K_VALUES = [2, 3, 4, 5]
 
 ESTRATEGIAS = [
-    ("Louvain",        "src.estrategias.louvain",              "Louvain"),
+    ("IB+QNodos",      "src.estrategias.ib_qnodos",              "IBQNodos"),
     ("Info Bottleneck","src.estrategias.informacion_bottleneck","InformacionBottleneck"),
     ("Hiperbolica",    "src.estrategias.hiperbolica",           "ParticionHiperbolica"),
     ("Variacional",    "src.estrategias.variacional",           "ParticionVariacional"),
@@ -68,13 +68,23 @@ SISTEMAS = {
             ("ABCDEFGHIJKLMNO", "BCDEFGHIJKLMNO"),
         ],
     },
+    "20A": {
+        "estado":  "10000000000000000000",
+        "sistema": "ABCDEFGHIJKLMNOPQRST",
+        "tpm":     "src/.samples/N20A.npy",
+        "casos": [
+            ("ABCDEFGHIJKLMNOPQRST", "ABCDEFGHIJKLMNOPQRST"),
+            ("ABCDEFGHIJKLMNOPQRST", "ABCDEFGHIJKLMNOPQRS"),
+            ("ABCDEFGHIJKLMNOPQRST", "BCDEFGHIJKLMNOPQRST"),
+        ],
+    },
 }
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Colores
 # ──────────────────────────────────────────────────────────────────────────────
 COLORES_EST = {
-    "Louvain":         "D9EAD3",
+    "IB+QNodos":       "C6EFCE",
     "Info Bottleneck": "CFE2F3",
     "Hiperbolica":     "FFF2CC",
     "Variacional":     "F4CCCC",
@@ -109,7 +119,10 @@ def _cargar_tpm(nombre: str) -> np.ndarray:
         from src.controladores.gestor import Gestor
         aplicacion.set_pagina_red_muestra("A")
         return Gestor(cfg["estado"]).cargar_red()
-    return np.genfromtxt(cfg["tpm"], delimiter=",").astype(np.float32)
+    path = cfg["tpm"]
+    if path.endswith(".npy"):
+        return np.load(path).astype(np.float32)
+    return np.genfromtxt(path, delimiter=",").astype(np.float32)
 
 
 def _importar_estrategia(modulo: str, clase: str):
@@ -203,7 +216,7 @@ def _crear_hoja(wb: openpyxl.Workbook, nombre_sistema: str, tpm: np.ndarray) -> 
     ws.cell(2, 1, "Sistema:").font = _font(bold=True)
     ws.cell(2, 2, sistema)
     ws.cell(3, 1, "Estrategias:").font = _font(bold=True)
-    ws.cell(3, 2, "Louvain | Info Bottleneck | Hiperbolica | Variacional | REMCMC")
+    ws.cell(3, 2, "IB+QNodos | Info Bottleneck | Hiperbolica | Variacional | REMCMC")
 
     # ── Calcular columnas ─────────────────────────────────────────────────
     # Layout: col 1=#Prueba, col 2=Alcance, col 3=Mecanismo

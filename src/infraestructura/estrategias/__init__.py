@@ -30,6 +30,7 @@ from src.estrategias.remcmc import REMCMC
 from src.estrategias.variacional import ParticionVariacional
 from src.estrategias.branch_bound import BranchBound
 from src.estrategias.hiperbolica import ParticionHiperbolica
+from src.estrategias.ib_qnodos import IBQNodos
 
 __all__ = [
     "FuerzaBruta",
@@ -46,4 +47,5 @@ __all__ = [
     "ParticionVariacional",
     "BranchBound",
     "ParticionHiperbolica",
+    "IBQNodos",
 ]
