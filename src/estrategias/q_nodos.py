@@ -230,6 +230,8 @@ class QNodos(SIA):
 
         rng = np.random.default_rng(aplicacion.semilla_numpy + len(vertices))
         temp = temp_inicial
+        niveles_sin_mejora = 0
+        mejor_previa = mejor_perdida
 
         while temp > temp_final:
             for _ in range(pasos_por_temp):
@@ -258,6 +260,13 @@ class QNodos(SIA):
             temp *= factor
             if mejor_perdida <= 1e-12:
                 break
+            if mejor_perdida < mejor_previa:
+                mejor_previa = mejor_perdida
+                niveles_sin_mejora = 0
+            else:
+                niveles_sin_mejora += 1
+                if niveles_sin_mejora >= 5 and temp < temp_inicial * 0.3:
+                    break
 
         clave_sa = tuple(sorted(mejor_a, key=lambda v: (v[0], v[1])))
         return clave_sa, mejor_perdida, mejor_dist

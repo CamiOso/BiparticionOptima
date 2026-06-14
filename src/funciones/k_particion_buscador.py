@@ -410,6 +410,8 @@ class BuscadorKRecocido(BuscadorKParticion):
             return mejor
 
         temp = self.temp_inicial
+        niveles_sin_mejora = 0
+        mejor_previa = mejor.perdida
         while temp > self.temp_final:
             for _ in range(self.pasos_por_temp):
                 nueva = list(asig_actual)
@@ -453,6 +455,13 @@ class BuscadorKRecocido(BuscadorKParticion):
             temp *= self.factor_enfriamiento
             if mejor.perdida <= 1e-12:
                 break
+            if mejor.perdida < mejor_previa:
+                mejor_previa = mejor.perdida
+                niveles_sin_mejora = 0
+            else:
+                niveles_sin_mejora += 1
+                if niveles_sin_mejora >= 5 and temp < self.temp_inicial * 0.3:
+                    break
 
         return mejor
 

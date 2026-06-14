@@ -318,9 +318,17 @@ class IBQNodos(SIA):
 
         rng = np.random.default_rng(aplicacion.semilla_numpy + len(vertices))
         temp = self.temp_inicial
+        niveles_sin_mejora = 0
+        mejor_previa = mejor_perdida
+
+        # Para mec grande (≥22 nodos) cada bipartir es O(2^n_mec) ≈ 3-7s/eval.
+        # Reducir pasos_por_temp de 30 a 3 da 10× speedup sin perder calidad
+        # cuando la semilla IB ya es buena.
+        n_mec_vertices = sum(1 for t, _ in vertices if t == 0)
+        pasos = self.pasos_por_temp if n_mec_vertices < 22 else max(3, self.pasos_por_temp // 10)
 
         while temp > self.temp_final:
-            for _ in range(self.pasos_por_temp):
+            for _ in range(pasos):
                 lista_a = list(actual_a)
                 lista_b = list(full_set - actual_a)
                 if not lista_a or not lista_b:
@@ -346,6 +354,13 @@ class IBQNodos(SIA):
             temp *= self.factor_enfriamiento
             if mejor_perdida <= 1e-12:
                 break
+            if mejor_perdida < mejor_previa:
+                mejor_previa = mejor_perdida
+                niveles_sin_mejora = 0
+            else:
+                niveles_sin_mejora += 1
+                if niveles_sin_mejora >= 5 and temp < self.temp_inicial * 0.3:
+                    break
 
         clave_sa = tuple(sorted(mejor_a, key=lambda v: (v[0], v[1])))
         return clave_sa, mejor_perdida, mejor_dist

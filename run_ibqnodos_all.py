@@ -11,12 +11,24 @@ Uso:
 
 import argparse
 import json
+import signal
 import sys
 import time
 from pathlib import Path
 
 import numpy as np
 import openpyxl
+
+TIMEOUT_CASO = 8000  # segundos máximos por caso (mec=25 necesita hasta ~6500s)
+
+
+class _CasoTimeout(Exception):
+    pass
+
+
+def _sigalrm_handler(signum, frame):
+    raise _CasoTimeout()
+
 
 PROJECT = Path(__file__).parent.resolve()
 sys.path.insert(0, str(PROJECT))
@@ -76,11 +88,10 @@ def to_mask(letters: str, sistema: str) -> str:
     return "".join("1" if c in s else "0" for c in sistema)
 
 
-def leer_casos(cfg: dict) -> list[dict]:
-    """Lee todos los casos con phi QNodos definido de la hoja."""
+def leer_casos(cfg: dict, solo_con_phi: bool = False) -> list[dict]:
+    """Lee todos los casos de la hoja. Con solo_con_phi=True filtra los que tienen referencia QNodos."""
     wb = openpyxl.load_workbook(EXCEL_REF, data_only=True, read_only=True)
     ws = wb[cfg["sheet"]]
-    n       = cfg["n"]
     sistema = cfg["sistema"]
     casos   = []
     for r in range(6, ws.max_row + 1):
@@ -90,7 +101,7 @@ def leer_casos(cfg: dict) -> list[dict]:
         t_ref   = ws.cell(r, 6).value
         if alc is None:
             break
-        if phi_ref is None:
+        if solo_con_phi and phi_ref is None:
             continue
         casos.append({
             "fila":    r,
@@ -98,8 +109,8 @@ def leer_casos(cfg: dict) -> list[dict]:
             "mec_str": str(mec),
             "alc_bin": to_mask(str(alc), sistema),
             "mec_bin": to_mask(str(mec), sistema),
-            "phi_ref": float(phi_ref),
-            "t_ref":   float(t_ref) if t_ref is not None else None,
+            "phi_ref": float(phi_ref) if phi_ref is not None else None,
+            "t_ref":   float(t_ref)   if t_ref   is not None else None,
         })
     wb.close()
     return casos
@@ -155,11 +166,18 @@ def crear_excel_resultado(resultados: dict) -> None:
         for caso in casos:
             phi_ib  = caso.get("phi_ib")
             t_ib    = caso.get("t_ib")
-            phi_ref = caso["phi_ref"]
+            phi_ref = caso.get("phi_ref")
             t_ref   = caso.get("t_ref")
             if phi_ib is not None:
                 speedup = round(t_ref / t_ib, 1) if (t_ref and t_ib) else None
-                match   = "✓" if abs(phi_ib - phi_ref) < 1e-5 else "✗"
+                if phi_ref is None:
+                    match = "—"
+                elif abs(phi_ib - phi_ref) < 1e-5:
+                    match = "✓"
+                elif phi_ib < phi_ref:
+                    match = "↓mejor"
+                else:
+                    match = "✗"
             else:
                 speedup = None
                 match   = "pendiente"
@@ -167,10 +185,10 @@ def crear_excel_resultado(resultados: dict) -> None:
                 caso["fila"],
                 caso["alc_str"],
                 caso["mec_str"],
-                round(phi_ref, 8),
-                round(t_ref, 4) if t_ref else None,
-                round(phi_ib, 8) if phi_ib is not None else None,
-                round(t_ib, 4)   if t_ib  is not None else None,
+                round(phi_ref, 8) if phi_ref is not None else None,
+                round(t_ref, 4)   if t_ref   is not None else None,
+                round(phi_ib, 8)  if phi_ib  is not None else None,
+                round(t_ib, 4)    if t_ib    is not None else None,
                 speedup,
                 match,
                 caso.get("particion_ib", ""),
@@ -180,14 +198,15 @@ def crear_excel_resultado(resultados: dict) -> None:
     print(f"\nExcel guardado en {EXCEL_OUT}", flush=True)
 
 
-def run_hoja(hoja_key: str, checkpoint: dict, desde_fila: int = 0) -> list[dict]:
+def run_hoja(hoja_key: str, checkpoint: dict, desde_fila: int = 0,
+             solo_con_phi: bool = False) -> list[dict]:
     cfg   = HOJAS[hoja_key]
-    casos = leer_casos(cfg)
+    casos = leer_casos(cfg, solo_con_phi=solo_con_phi)
     print(f"\n{'='*60}", flush=True)
-    print(f"  Hoja {hoja_key}: {len(casos)} casos con QNodos ref", flush=True)
+    print(f"  Hoja {hoja_key}: {len(casos)} casos totales", flush=True)
 
     if not casos:
-        print("  Sin casos con referencia QNodos — saltando.", flush=True)
+        print("  Sin casos — saltando.", flush=True)
         return []
 
     tpm       = cargar_tpm(cfg)
@@ -209,36 +228,58 @@ def run_hoja(hoja_key: str, checkpoint: dict, desde_fila: int = 0) -> list[dict]
 
         n_alc = caso["alc_bin"].count("1")
         n_mec = caso["mec_bin"].count("1")
+        phi_ref_str = f"phi_ref={caso['phi_ref']:.6f}" if caso["phi_ref"] is not None else "phi_ref=—"
         print(
             f"  [{i+1}/{len(casos)}] fila={caso['fila']} "
             f"alc={caso['alc_str']}({n_alc}) mec={caso['mec_str']}({n_mec}) "
-            f"phi_ref={caso['phi_ref']:.6f}",
+            f"{phi_ref_str}",
             flush=True,
         )
 
         try:
-            t0  = time.perf_counter()
-            res = estrategia.aplicar_estrategia(
-                estado_inicial=estado,
-                condicion=condicion,
-                alcance=caso["alc_bin"],
-                mecanismo=caso["mec_bin"],
-                k=2,
-            )
+            signal.signal(signal.SIGALRM, _sigalrm_handler)
+            signal.alarm(TIMEOUT_CASO)
+            t0 = time.perf_counter()
+            try:
+                res = estrategia.aplicar_estrategia(
+                    estado_inicial=estado,
+                    condicion=condicion,
+                    alcance=caso["alc_bin"],
+                    mecanismo=caso["mec_bin"],
+                    k=2,
+                )
+            finally:
+                signal.alarm(0)
             elapsed = time.perf_counter() - t0
 
             phi_ib  = float(res.perdida)
-            match   = abs(phi_ib - caso["phi_ref"]) < 1e-5
-            speedup = round(caso["t_ref"] / elapsed, 1) if caso["t_ref"] else None
+            phi_ref = caso["phi_ref"]
+            speedup = round(caso["t_ref"] / elapsed, 1) if caso.get("t_ref") else None
 
+            if phi_ref is None:
+                match_str = "—"
+            elif abs(phi_ib - phi_ref) < 1e-5:
+                match_str = "✓"
+            elif phi_ib < phi_ref:
+                match_str = "↓mejor"
+            else:
+                match_str = "✗"
+
+            ref_str = f"ref={phi_ref:.6f}" if phi_ref is not None else "ref=—"
             print(
-                f"    φ={phi_ib:.6f} ref={caso['phi_ref']:.6f} "
-                f"{'✓' if match else '✗'}  t={elapsed:.1f}s  speedup=×{speedup}",
+                f"    φ={phi_ib:.6f} {ref_str} "
+                f"{match_str}  t={elapsed:.1f}s"
+                + (f"  speedup=×{speedup}" if speedup else ""),
                 flush=True,
             )
 
             caso_resultado = {**caso, "phi_ib": phi_ib, "t_ib": round(elapsed, 3),
                               "particion_ib": str(res.particion)}
+        except _CasoTimeout:
+            elapsed = time.perf_counter() - t0
+            print(f"    TIMEOUT (>{TIMEOUT_CASO}s)  t={elapsed:.0f}s", flush=True)
+            caso_resultado = {**caso, "phi_ib": None, "t_ib": round(elapsed, 3),
+                              "particion_ib": f"TIMEOUT >{TIMEOUT_CASO}s"}
         except Exception as exc:
             print(f"    ERROR: {exc}", flush=True)
             caso_resultado = {**caso, "phi_ib": None, "t_ib": None,
@@ -279,10 +320,17 @@ def main() -> None:
     checkpoint  = cargar_checkpoint()
     resultados  = {}
 
+    # 10A y 15B solo tienen datos QNodos; 20A, 22A, 25A corren todos los casos
+    SOLO_PHI = {"10A": True, "15B": True, "20A": True, "22A": False, "25A": False}
+
     t_total = time.perf_counter()
     for hoja_key in hojas_a_correr:
         desde_fila = args.fila if hoja_key == hojas_a_correr[0] else 0
-        resultados[hoja_key] = run_hoja(hoja_key, checkpoint, desde_fila=desde_fila)
+        resultados[hoja_key] = run_hoja(
+            hoja_key, checkpoint,
+            desde_fila=desde_fila,
+            solo_con_phi=SOLO_PHI.get(hoja_key, False),
+        )
 
     crear_excel_resultado(resultados)
 
@@ -295,15 +343,18 @@ def main() -> None:
     print("="*60)
     for hoja_key, casos in resultados.items():
         completados = [c for c in casos if c.get("phi_ib") is not None]
-        matches     = [c for c in completados if abs(c["phi_ib"] - c["phi_ref"]) < 1e-5]
+        con_ref     = [c for c in completados if c.get("phi_ref") is not None]
+        matches     = [c for c in con_ref if abs(c["phi_ib"] - c["phi_ref"]) < 1e-5]
+        better      = [c for c in con_ref if c["phi_ib"] - c["phi_ref"] < -1e-5]
         if not completados:
             print(f"  {hoja_key}: sin resultados")
             continue
         speedups = [c["t_ref"] / c["t_ib"] for c in completados if c.get("t_ref") and c.get("t_ib")]
         avg_sp   = sum(speedups) / len(speedups) if speedups else 0
+        sin_ref  = len(completados) - len(con_ref)
         print(
             f"  {hoja_key}: {len(completados)}/{len(casos)} casos | "
-            f"match={len(matches)}/{len(completados)} | "
+            f"match={len(matches)}/{len(con_ref)} mejor={len(better)} sin_ref={sin_ref} | "
             f"speedup_promedio=×{avg_sp:.1f}"
         )
 
