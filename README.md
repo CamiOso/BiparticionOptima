@@ -371,6 +371,30 @@ las 7.5 horas de QNodos (×290 speedup), manteniendo φ exacto.
 > A n≥25, QNodos es computacionalmente inviable (días/semanas). IBQNodos escala
 > a n=22 en minutos con el hardware de escritorio descrito en la hoja `plataformas`.
 
+### Benchmark completo IBQNodos vs QNodos — todas las hojas (195 casos)
+
+Benchmark exhaustivo sobre los cinco sistemas de referencia de `DatosPruebas2026_1.xlsx`
+usando `run_ibqnodos_all.py`. Resultados guardados en `DatosIBQNodos2026.xlsx`.
+
+| Sistema | n  | Casos | φ idéntico | IBQ mejoró φ | Speedup promedio | Speedup máximo |
+|---------|----|-------|-----------|--------------|-----------------|----------------|
+| N10A    | 10 | 49/49 | 49 (100%) | 0            | ×5              | ×11            |
+| N15B    | 15 | 50/50 | 50 (100%) | 0            | ×12             | ×32            |
+| N20A    | 20 | 50/50 | 50 (100%) | 0            | ×138            | ×491           |
+| N22A    | 22 | 33/33 | 33 (100%) | 0            | ×88             | ×491           |
+| N25A    | 25 | 13/13 | 12 (92%)  | **1**        | ×11             | ×84            |
+| **Total** | — | **195/195** | **194** | **1** | — | — |
+
+IBQNodos reprodujo el φ exacto de QNodos en 194/195 casos. En el caso restante
+(n=25, alc=24 nodos, mec=12 nodos) IBQNodos encontró una partición con **φ
+inferior** al reportado por QNodos, lo que indica que IBQNodos halló un mejor
+mínimo local —esperado ya que QNodos también usa heurística a este tamaño.
+
+El speedup crece con n: de ×5 promedio en n=10 hasta **×138 promedio y ×491 máximo**
+en n=20/22. A n=25 el speedup se reduce porque el espacio de búsqueda del
+Information Bottleneck también crece, pero sigue siendo más rápido que QNodos
+con mejor calidad de solución.
+
 ---
 
 ## Estructura del proyecto
