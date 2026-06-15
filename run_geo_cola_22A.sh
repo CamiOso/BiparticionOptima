@@ -1,1 +1,0 @@
-scripts/run_geo_cola_22A.sh

@@ -1,1 +1,0 @@
-scripts/run_geo_single_25A.py

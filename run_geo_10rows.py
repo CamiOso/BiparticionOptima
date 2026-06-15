@@ -1,1 +1,0 @@
-scripts/run_geo_10rows.py

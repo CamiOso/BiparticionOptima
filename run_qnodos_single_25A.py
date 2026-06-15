@@ -1,1 +1,0 @@
-scripts/run_qnodos_single_25A.py

@@ -1,1 +1,0 @@
-scripts/run_geo_20A_parallel.py

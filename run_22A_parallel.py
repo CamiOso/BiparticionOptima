@@ -1,1 +1,0 @@
-scripts/run_22A_parallel.py
