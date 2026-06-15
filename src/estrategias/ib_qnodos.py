@@ -92,6 +92,7 @@ class IBQNodos(SIA):
         alcance: str,
         mecanismo: str,
         k: int = 2,
+        grupo_a_seed: "set | None" = None,
         **_kwargs,
     ) -> Solucion:
         if k < 2:
@@ -121,13 +122,17 @@ class IBQNodos(SIA):
                 particion="NO-PARTITION",
             )
 
-        # Fase 1: IB genera la semilla
-        semilla_ib = self._generar_semilla_ib(nodos, k_eff)
-
         if k_eff == 2:
+            # Fase 1: IB genera semilla (o usar warm-start si se provee)
+            semilla_ib = None if grupo_a_seed is None else ()
+            if semilla_ib is None:
+                semilla_ib = self._generar_semilla_ib(nodos, k_eff)
             return self._refinar_k2(
-                estado_inicial, alcance_total, mecanismo_total, semilla_ib
+                estado_inicial, alcance_total, mecanismo_total, semilla_ib,
+                grupo_a_seed=grupo_a_seed,
             )
+
+        semilla_ib = self._generar_semilla_ib(nodos, k_eff)
         return self._refinar_kn(
             estado_inicial, nodos, alcance_total, mecanismo_total, k_eff, semilla_ib
         )
@@ -169,6 +174,7 @@ class IBQNodos(SIA):
         alcance_total: tuple[int, ...],
         mecanismo_total: tuple[int, ...],
         semilla_ib: tuple[int, ...],
+        grupo_a_seed: "set | None" = None,
     ) -> Solucion:
         """Convierte semilla IB a formato QNodos y refina con SA bipartito."""
         assert self.sia_subsistema is not None
@@ -179,16 +185,20 @@ class IBQNodos(SIA):
             | set(int(v) for v in self.sia_subsistema.dims_ncubos.tolist())
         )
 
-        # IB asigna grupo 0 o 1 a cada nodo. Extraer nodos del grupo 0.
-        grupo0_nodos = {nodos_ordenados[i] for i, g in enumerate(semilla_ib) if g == 0}
-
         # Mapear a vertices QNodos: (0, idx)=mecanismo, (1, idx)=alcance
         vertices = list(
             [(0, int(i)) for i in self.sia_subsistema.dims_ncubos.tolist()]
             + [(1, int(i)) for i in self.sia_subsistema.indices_ncubos.tolist()]
         )
         full_set = set(vertices)
-        grupo_a_inicial = {v for v in vertices if v[1] in grupo0_nodos}
+
+        if grupo_a_seed is not None:
+            # Warm-start: filtrar el seed al conjunto de vértices del caso actual
+            grupo_a_inicial = {v for v in vertices if v in grupo_a_seed}
+        else:
+            # IB asigna grupo 0 o 1 a cada nodo. Extraer nodos del grupo 0.
+            grupo0_nodos = {nodos_ordenados[i] for i, g in enumerate(semilla_ib) if g == 0}
+            grupo_a_inicial = {v for v in vertices if v[1] in grupo0_nodos}
 
         if not grupo_a_inicial or grupo_a_inicial == full_set:
             grupo_a_inicial = {vertices[0]}

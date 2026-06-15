@@ -11,6 +11,7 @@ Uso:
 
 import argparse
 import json
+import re
 import signal
 import sys
 import time
@@ -86,6 +87,25 @@ def to_mask(letters: str, sistema: str) -> str:
     """Convierte letras (ej. 'ACEG') a máscara binaria (ej. '1010101...')."""
     s = set(letters.upper())
     return "".join("1" if c in s else "0" for c in sistema)
+
+
+_RE_GRUPO_A = re.compile(r'\(M=\(([^)]*)\), A=\(([^)]*)\)\)')
+
+def _parse_grupo_a(particion_str: str) -> "set | None":
+    """Extrae grupo_a del string de partición: {(0,m)...} ∪ {(1,a)...}."""
+    m = _RE_GRUPO_A.match(particion_str)
+    if not m:
+        return None
+
+    def nums(s: str) -> list[int]:
+        return [int(x.strip()) for x in s.split(",") if x.strip().lstrip("-").isdigit()]
+
+    grupo_a: set = set()
+    for mn in nums(m.group(1)):
+        grupo_a.add((0, mn))
+    for an in nums(m.group(2)):
+        grupo_a.add((1, an))
+    return grupo_a or None
 
 
 def leer_casos(cfg: dict, solo_con_phi: bool = False) -> list[dict]:
@@ -219,6 +239,14 @@ def run_hoja(hoja_key: str, checkpoint: dict, desde_fila: int = 0,
     resultados_hoja = list(checkpoint.get(hoja_key, []))
     done_filas      = {c["fila"] for c in resultados_hoja if "phi_ib" in c}
 
+    # Seed cache: mec_bin -> grupo_a extraído del mejor resultado disponible
+    seed_cache: dict[str, set] = {}
+    for c in resultados_hoja:
+        if c.get("phi_ib") is not None:
+            ga = _parse_grupo_a(c.get("particion_ib", ""))
+            if ga:
+                seed_cache[c["mec_bin"]] = ga
+
     for i, caso in enumerate(casos):
         if caso["fila"] < desde_fila:
             continue
@@ -236,6 +264,10 @@ def run_hoja(hoja_key: str, checkpoint: dict, desde_fila: int = 0,
             flush=True,
         )
 
+        grupo_a_seed = seed_cache.get(caso["mec_bin"])
+        if grupo_a_seed:
+            print(f"    warm-start: mec_bin={caso['mec_bin'][:8]}... seed_size={len(grupo_a_seed)}", flush=True)
+
         try:
             signal.signal(signal.SIGALRM, _sigalrm_handler)
             signal.alarm(TIMEOUT_CASO)
@@ -247,6 +279,7 @@ def run_hoja(hoja_key: str, checkpoint: dict, desde_fila: int = 0,
                     alcance=caso["alc_bin"],
                     mecanismo=caso["mec_bin"],
                     k=2,
+                    grupo_a_seed=grupo_a_seed,
                 )
             finally:
                 signal.alarm(0)
@@ -275,6 +308,10 @@ def run_hoja(hoja_key: str, checkpoint: dict, desde_fila: int = 0,
 
             caso_resultado = {**caso, "phi_ib": phi_ib, "t_ib": round(elapsed, 3),
                               "particion_ib": str(res.particion)}
+            # Actualizar seed_cache con la partición recién hallada
+            ga_new = _parse_grupo_a(str(res.particion))
+            if ga_new:
+                seed_cache[caso["mec_bin"]] = ga_new
         except _CasoTimeout:
             elapsed = time.perf_counter() - t0
             print(f"    TIMEOUT (>{TIMEOUT_CASO}s)  t={elapsed:.0f}s", flush=True)
