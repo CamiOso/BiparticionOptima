@@ -148,18 +148,24 @@ class IBQNodos(SIA):
         perfiles = self._extraer_perfiles(nodos)
         rng = np.random.default_rng(73)
 
+        n_restarts = self.n_restarts_ib if len(nodos) < 24 else min(3, self.n_restarts_ib)
         asignaciones = [
             self._ib_alternating(perfiles, k, np.random.default_rng(73 + r), r)
-            for r in range(self.n_restarts_ib)
+            for r in range(n_restarts)
         ]
 
         def evaluar(asig):
             perdida, _ = self._evaluar_asig(nodos, asig)
             return perdida, asig
 
-        n_workers = min(os.cpu_count() or 1, len(asignaciones))
-        with ThreadPoolExecutor(max_workers=n_workers) as ex:
-            resultados = list(ex.map(evaluar, asignaciones))
+        # Para n>=20 cada bipartir necesita ~537MB temporal (float64 interno);
+        # 8 paralelos = 4.3GB concurrent → swap. Correr secuencial.
+        if len(nodos) >= 20:
+            resultados = [evaluar(asig) for asig in asignaciones]
+        else:
+            n_workers = min(os.cpu_count() or 1, len(asignaciones))
+            with ThreadPoolExecutor(max_workers=n_workers) as ex:
+                resultados = list(ex.map(evaluar, asignaciones))
 
         _, mejor_asig = min(resultados, key=lambda x: x[0])
         return mejor_asig

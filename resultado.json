@@ -1,0 +1,28 @@
+{
+  "estrategia_solicitada": "qnodos",
+  "modo_geometric": "refinado",
+  "k_particiones": 3,
+  "estado_inicial": "1000",
+  "archivo_tpm": "src/.samples/N4A.csv",
+  "resultados": {
+    "qnodos_k3": {
+      "estrategia": "QNodos",
+      "estado_inicial": "1000",
+      "perdida": 0.25,
+      "particion": "G0(M=(0, 1, 2, 3), A=(0, 2, 3)) | G1(M=(), A=(1,))",
+      "distribucion_subsistema": [
+        0.0,
+        0.0,
+        1.0,
+        0.0
+      ],
+      "distribucion_particion": [
+        0.0,
+        0.25,
+        1.0,
+        0.0
+      ],
+      "elapsed_seconds": 0.4177138049999485
+    }
+  }
+}

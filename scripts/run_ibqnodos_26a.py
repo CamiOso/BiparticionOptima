@@ -20,7 +20,7 @@ from pathlib import Path
 import numpy as np
 import openpyxl
 
-PROJECT = Path(__file__).parent.resolve()
+PROJECT = Path(__file__).parent.parent.resolve()
 sys.path.insert(0, str(PROJECT))
 
 EXCEL       = PROJECT / "DatosIBQNodos2026.xlsx"
@@ -98,14 +98,44 @@ def leer_casos() -> list[dict]:
     return casos
 
 
+# ── Hoja resumen IBQNodos ─────────────────────────────────────────────────
+
+HOJA_IB  = "26A-IBQNodos"
+HDRS_IB  = ["#Prueba", "Alcance", "Mecanismo", "IBQNodos_φ", "IBQNodos_t(s)", "Partición_IBQNodos"]
+
+def _inicializar_hoja_ibqnodos() -> None:
+    wb = openpyxl.load_workbook(EXCEL)
+    if HOJA_IB not in wb.sheetnames:
+        ws = wb.create_sheet(HOJA_IB)
+    else:
+        ws = wb[HOJA_IB]
+    if ws.cell(1, 1).value != HDRS_IB[0]:
+        for col, h in enumerate(HDRS_IB, 1):
+            ws.cell(1, col, h)
+    wb.save(EXCEL)
+    wb.close()
+    print(f"Hoja '{HOJA_IB}' lista.", flush=True)
+
+
 # ── Escribir resultado en Excel ───────────────────────────────────────────
 
-def escribir_resultado_excel(fila: int, particion: str, perdida: float | None, t: float | None) -> None:
+def escribir_resultado_excel(fila: int, particion: str, perdida: float | None, t: float | None,
+                              prueba: int, alc_str: str, mec_str: str) -> None:
     wb = openpyxl.load_workbook(EXCEL)
+    # 26A-Elementos
     ws = wb["26A-Elementos"]
     ws.cell(fila, 4, particion)
     ws.cell(fila, 5, round(perdida, 8) if perdida is not None else "TIMEOUT")
     ws.cell(fila, 6, round(t, 3)       if t       is not None else None)
+    # 26A-IBQNodos
+    ws2 = wb[HOJA_IB]
+    fila2 = prueba + 1   # fila 1 = encabezados
+    ws2.cell(fila2, 1, prueba)
+    ws2.cell(fila2, 2, alc_str)
+    ws2.cell(fila2, 3, mec_str)
+    ws2.cell(fila2, 4, round(perdida, 8) if perdida is not None else "TIMEOUT")
+    ws2.cell(fila2, 5, round(t, 3)       if t       is not None else None)
+    ws2.cell(fila2, 6, particion)
     wb.save(EXCEL)
     wb.close()
 
@@ -130,6 +160,7 @@ def main() -> None:
     from src.estrategias.ib_qnodos import IBQNodos
     estrategia = IBQNodos(tpm)
 
+    _inicializar_hoja_ibqnodos()
     casos      = leer_casos()
     checkpoint = cargar_checkpoint()
     done_filas = {c["fila"] for c in checkpoint.get("casos", []) if "phi_ib" in c}
@@ -193,20 +224,26 @@ def main() -> None:
             if ga_new:
                 seed_cache[caso["mec_bin"]] = ga_new
 
-            escribir_resultado_excel(caso["fila"], str(res.particion), phi_ib, elapsed)
+            prueba = caso["fila"] - 5
+            escribir_resultado_excel(caso["fila"], str(res.particion), phi_ib, elapsed,
+                                     prueba, caso["alc_str"], caso["mec_str"])
 
         except _CasoTimeout:
             elapsed = time.perf_counter() - t0
             print(f"    TIMEOUT (>{TIMEOUT_CASO}s)  t={elapsed:.0f}s", flush=True)
             caso_resultado = {**caso, "phi_ib": None, "t_ib": round(elapsed, 3),
                               "particion_ib": f"TIMEOUT >{TIMEOUT_CASO}s"}
-            escribir_resultado_excel(caso["fila"], f"TIMEOUT >{TIMEOUT_CASO}s", None, elapsed)
+            prueba = caso["fila"] - 5
+            escribir_resultado_excel(caso["fila"], f"TIMEOUT >{TIMEOUT_CASO}s", None, elapsed,
+                                     prueba, caso["alc_str"], caso["mec_str"])
 
         except Exception as exc:
             print(f"    ERROR: {exc}", flush=True)
             caso_resultado = {**caso, "phi_ib": None, "t_ib": None,
                               "particion_ib": f"ERROR: {exc}"}
-            escribir_resultado_excel(caso["fila"], f"ERROR: {exc}", None, None)
+            prueba = caso["fila"] - 5
+            escribir_resultado_excel(caso["fila"], f"ERROR: {exc}", None, None,
+                                     prueba, caso["alc_str"], caso["mec_str"])
 
         # Upsert checkpoint
         idx = next((j for j, c in enumerate(resultados) if c["fila"] == caso["fila"]), None)
