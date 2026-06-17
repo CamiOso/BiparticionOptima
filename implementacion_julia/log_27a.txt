@@ -1,0 +1,304 @@
+Cargando TPM N27A.npy (14.5 GB)...
+TPM mapeada en 0.1s | shape=(134217728, 27) (n_nodos×n_estados)
+Uso RAM: ~0 MB (memory-mapped, OS pagea bajo demanda)
+  [INFO] Resultados → checkpoint JSON + resultados_27a.json
+
+============================================================
+  27A Julia: 50 casos | completados: 0
+============================================================
+
+  [1/50] fila=6 alc=ACEGIKMOQS...(13) mec=ACEGIKMOQS...(13)
+    [IB] distribs_sistema... ok
+    [IB] generando semilla... ok  φ_seed=0.0015
+    [SA] refinando... ok  φ=0.001485
+    φ=0.001485  t=1071.1s
+  [2/50] fila=7 alc=ACEGIKMOQS...(13) mec=BDFHJLNPRT...(13)
+    [IB] distribs_sistema... ok
+    [IB] generando semilla... ok  φ_seed=0.0006
+    [SA] refinando... ok  φ=0.000624
+    φ=0.000624  t=427.1s
+  [3/50] fila=8 alc=BDFHJLNPRT...(13) mec=ACEGIKMOQS...(13)
+    warm-start: |alc_A|=1, |mec_A|=0
+    [IB] distribs_sistema... ok
+    [IB] warm-start aplicado (|alc_A|=1, |mec_A|=0)
+    [SA] refinando... ok  φ=0.001697
+    φ=0.001697  t=415.2s
+  [4/50] fila=9 alc=BDFHJLNPRT...(13) mec=BDFHJLNPRT...(13)
+    warm-start: |alc_A|=1, |mec_A|=0
+    [IB] distribs_sistema... ok
+    [IB] warm-start aplicado (|alc_A|=1, |mec_A|=0)
+    [SA] refinando... ok  φ=0.00093
+    φ=0.00093  t=422.6s
+  [5/50] fila=10 alc=ABCDEFGHIJ...(18) mec=ACEGIKMOQS...(13)
+    warm-start: |alc_A|=1, |mec_A|=0
+    [IB] distribs_sistema... ok
+    [IB] warm-start aplicado (|alc_A|=1, |mec_A|=0)
+    [SA] refinando... ok  φ=0.001485
+    φ=0.001485  t=431.7s
+  [6/50] fila=11 alc=BCDEFGHIJK...(18) mec=BDFHJLNPRT...(13)
+    warm-start: |alc_A|=1, |mec_A|=0
+    [IB] distribs_sistema... ok
+    [IB] warm-start aplicado (|alc_A|=1, |mec_A|=0)
+    [SA] refinando... ok  φ=0.00093
+    φ=0.00093  t=426.9s
+  [7/50] fila=12 alc=ACEGIKMOQS...(13) mec=ABCDEFGHIJ...(18)
+    [IB] distribs_sistema... ok
+    [IB] generando semilla... ok  φ_seed=0.0018
+    [SA] refinando... ok  φ=0.001765
+    φ=0.001765  t=166.1s
+  [8/50] fila=13 alc=BDFHJLNPRT...(13) mec=BCDEFGHIJK...(18)
+    [IB] distribs_sistema... ok
+    [IB] generando semilla... ok  φ_seed=0.0038
+    [SA] refinando... ok  φ=0.003813
+    φ=0.003813  t=168.1s
+  [9/50] fila=14 alc=ABCDEFGHIJ...(24) mec=ACEGIKMOQS...(13)
+    warm-start: |alc_A|=1, |mec_A|=0
+    [IB] distribs_sistema... ok
+    [IB] warm-start aplicado (|alc_A|=1, |mec_A|=0)
+    [SA] refinando... ok  φ=0.001485
+    φ=0.001485  t=540.1s
+  [10/50] fila=15 alc=BCDEFGHIJK...(24) mec=BDFHJLNPRT...(13)
+    warm-start: |alc_A|=1, |mec_A|=0
+    [IB] distribs_sistema... ok
+    [IB] warm-start aplicado (|alc_A|=1, |mec_A|=0)
+    [SA] refinando... ok  φ=0.00093
+    φ=0.00093  t=550.7s
+  [11/50] fila=16 alc=ACEGIKMOQS...(13) mec=ABCDEFGHIJ...(24)
+    [IB] distribs_sistema... ok
+    [IB] generando semilla... ok  φ_seed=0.0085
+    [SA] refinando... ok  φ=0.008459
+    φ=0.008459  t=221.7s
+  [12/50] fila=17 alc=BDFHJLNPRT...(13) mec=BCDEFGHIJK...(24)
+    [IB] distribs_sistema... ok
+    [IB] generando semilla... ok  φ_seed=0.0281
+    [SA] refinando... ok  φ=0.028112
+    φ=0.028112  t=186.5s
+  [13/50] fila=18 alc=ABCDEFGHIJ...(18) mec=BCDEFGHIJK...(18)
+    warm-start: |alc_A|=1, |mec_A|=0
+    [IB] distribs_sistema... ok
+    [IB] warm-start aplicado (|alc_A|=1, |mec_A|=0)
+    [SA] refinando... ok  φ=0.003813
+    φ=0.003813  t=50.9s
+  [14/50] fila=19 alc=ABCDEFGHIJ...(25) mec=ACEGIKMOQS...(13)
+    warm-start: |alc_A|=1, |mec_A|=0
+    [IB] distribs_sistema... ok
+    [IB] warm-start aplicado (|alc_A|=1, |mec_A|=0)
+    [SA] refinando... ok  φ=0.001485
+    φ=0.001485  t=932.6s
+  [15/50] fila=20 alc=BCDEFGHIJK...(25) mec=BDFHJLNPRT...(13)
+    warm-start: |alc_A|=1, |mec_A|=0
+    [IB] distribs_sistema... ok
+    [IB] warm-start aplicado (|alc_A|=1, |mec_A|=0)
+    [SA] refinando... ok  φ=0.00093
+    φ=0.00093  t=953.2s
+  [16/50] fila=21 alc=ABCDEFGHIJ...(25) mec=BDFHJLNPRT...(13)
+    warm-start: |alc_A|=1, |mec_A|=0
+    [IB] distribs_sistema... ok
+    [IB] warm-start aplicado (|alc_A|=1, |mec_A|=0)
+    [SA] refinando... ok  φ=0.000624
+    φ=0.000624  t=953.6s
+  [17/50] fila=22 alc=BCDEFGHIJK...(25) mec=ACEGIKMOQS...(13)
+    warm-start: |alc_A|=1, |mec_A|=0
+    [IB] distribs_sistema... ok
+    [IB] warm-start aplicado (|alc_A|=1, |mec_A|=0)
+    [SA] refinando... ok  φ=0.001697
+    φ=0.001697  t=940.5s
+  [18/50] fila=23 alc=ACEGIKMOQS...(13) mec=ABCDEFGHIJ...(25)
+    [IB] distribs_sistema... ok
+    [IB] generando semilla... ok  φ_seed=0.0205
+    [SA] refinando... ok  φ=0.020484
+    φ=0.020484  t=179.9s
+  [19/50] fila=24 alc=BDFHJLNPRT...(13) mec=BCDEFGHIJK...(25)
+    [IB] distribs_sistema... ok
+    [IB] generando semilla... ok  φ_seed=0.2379
+    [SA] refinando... ok  φ=0.237888
+    φ=0.237888  t=216.0s
+  [20/50] fila=25 alc=ACEGIKMOQS...(13) mec=BCDEFGHIJK...(25)
+    warm-start: |alc_A|=1, |mec_A|=0
+    [IB] distribs_sistema... ok
+    [IB] warm-start aplicado (|alc_A|=1, |mec_A|=0)
+    [SA] refinando... ok  φ=0.01308
+    φ=0.01308  t=179.0s
+  [21/50] fila=26 alc=BDFHJLNPRT...(13) mec=ABCDEFGHIJ...(25)
+    warm-start: |alc_A|=1, |mec_A|=0
+    [IB] distribs_sistema... ok
+    [IB] warm-start aplicado (|alc_A|=1, |mec_A|=0)
+    [SA] refinando... ok  φ=0.086419
+    φ=0.086419  t=180.3s
+  [22/50] fila=27 alc=ABCDEFGHIJ...(26) mec=ACEGIKMOQS...(13)
+    warm-start: |alc_A|=1, |mec_A|=0
+    [IB] distribs_sistema... ok
+    [IB] warm-start aplicado (|alc_A|=1, |mec_A|=0)
+    [SA] refinando... ok  φ=0.001485
+    φ=0.001485  t=671.7s
+  [23/50] fila=28 alc=BCDEFGHIJK...(26) mec=BDFHJLNPRT...(13)
+    warm-start: |alc_A|=1, |mec_A|=0
+    [IB] distribs_sistema... ok
+    [IB] warm-start aplicado (|alc_A|=1, |mec_A|=0)
+    [SA] refinando... ok  φ=0.00093
+    φ=0.00093  t=683.9s
+  [24/50] fila=29 alc=ACEGIKMOQS...(13) mec=ABCDEFGHIJ...(26)
+    [IB] distribs_sistema... ok
+    [IB] generando semilla... ok  φ_seed=0.2143
+    [SA] refinando... ok  φ=0.214321
+    φ=0.214321  t=213.0s
+  [25/50] fila=30 alc=BDFHJLNPRT...(13) mec=BCDEFGHIJK...(26)
+    [IB] distribs_sistema... ok
+    [IB] generando semilla... ok  φ_seed=0.1596
+    [SA] refinando... ok  φ=0.159649
+    φ=0.159649  t=216.0s
+  [26/50] fila=31 alc=ABCDEFGHIJ...(27) mec=ACEGIKMOQS...(13)
+    warm-start: |alc_A|=1, |mec_A|=0
+    [IB] distribs_sistema... ok
+    [IB] warm-start aplicado (|alc_A|=1, |mec_A|=0)
+    [SA] refinando... ok  φ=0.001485
+    φ=0.001485  t=818.9s
+  [27/50] fila=32 alc=ACEGIKMOQS...(13) mec=ABCDEFGHIJ...(27)
+    [IB] distribs_sistema... ok
+    [IB] generando semilla... ok  φ_seed=0.3228
+    [SA] refinando... ok  φ=0.322757
+    φ=0.322757  t=154.6s
+  [28/50] fila=33 alc=ABCDEFGHIJ...(24) mec=BCDEFGHIJK...(18)
+    warm-start: |alc_A|=1, |mec_A|=0
+    [IB] distribs_sistema... ok
+    [IB] warm-start aplicado (|alc_A|=1, |mec_A|=0)
+    [SA] refinando... ok  φ=0.003813
+    φ=0.003813  t=285.8s
+  [29/50] fila=34 alc=ABCDEFGHIJ...(18) mec=BCDEFGHIJK...(24)
+    warm-start: |alc_A|=1, |mec_A|=0
+    [IB] distribs_sistema... ok
+    [IB] warm-start aplicado (|alc_A|=1, |mec_A|=0)
+    [SA] refinando... ok  φ=0.028112
+    φ=0.028112  t=54.5s
+  [30/50] fila=35 alc=ABCDEFGHIJ...(25) mec=ABCDEFGHIJ...(18)
+    warm-start: |alc_A|=1, |mec_A|=0
+    [IB] distribs_sistema... ok
+    [IB] warm-start aplicado (|alc_A|=1, |mec_A|=0)
+    [SA] refinando... ok  φ=0.001765
+    φ=0.001765  t=109.9s
+  [31/50] fila=36 alc=BCDEFGHIJK...(25) mec=BCDEFGHIJK...(18)
+    warm-start: |alc_A|=1, |mec_A|=0
+    [IB] distribs_sistema... ok
+    [IB] warm-start aplicado (|alc_A|=1, |mec_A|=0)
+    [SA] refinando... ok  φ=0.003813
+    φ=0.003813  t=102.8s
+  [32/50] fila=37 alc=ABCDEFGHIJ...(18) mec=BCDEFGHIJK...(25)
+    warm-start: |alc_A|=1, |mec_A|=0
+    [IB] distribs_sistema... ok
+    [IB] warm-start aplicado (|alc_A|=1, |mec_A|=0)
+    [SA] refinando... ok  φ=0.01308
+    φ=0.01308  t=47.8s
+  [33/50] fila=38 alc=BCDEFGHIJK...(18) mec=ABCDEFGHIJ...(25)
+    warm-start: |alc_A|=1, |mec_A|=0
+    [IB] distribs_sistema... ok
+    [IB] warm-start aplicado (|alc_A|=1, |mec_A|=0)
+    [SA] refinando... ok  φ=0.086419
+    φ=0.086419  t=49.5s
+  [34/50] fila=39 alc=ABCDEFGHIJ...(26) mec=ABCDEFGHIJ...(18)
+    warm-start: |alc_A|=1, |mec_A|=0
+    [IB] distribs_sistema... ok
+    [IB] warm-start aplicado (|alc_A|=1, |mec_A|=0)
+    [SA] refinando... ok  φ=0.001765
+    φ=0.001765  t=161.6s
+  [35/50] fila=40 alc=BCDEFGHIJK...(18) mec=BCDEFGHIJK...(26)
+    warm-start: |alc_A|=1, |mec_A|=0
+    [IB] distribs_sistema... ok
+    [IB] warm-start aplicado (|alc_A|=1, |mec_A|=0)
+    [SA] refinando... ok  φ=0.159649
+    φ=0.159649  t=45.5s
+  [36/50] fila=43 alc=ABCDEFGHIJ...(22) mec=ABCDEFGHIJ...(22)
+    [IB] distribs_sistema... ok
+    [IB] generando semilla... ok  φ_seed=0.0221
+    [SA] refinando... ok  φ=0.022089
+    φ=0.022089  t=26.1s
+  [37/50] fila=41 alc=ABCDEFGHIJ...(27) mec=ABCDEFGHIJ...(18)
+    warm-start: |alc_A|=1, |mec_A|=0
+    [IB] distribs_sistema... ok
+    [IB] warm-start aplicado (|alc_A|=1, |mec_A|=0)
+    [SA] refinando... ok  φ=0.001765
+    φ=0.001765  t=420.6s
+  [38/50] fila=42 alc=ABCDEFGHIJ...(18) mec=ABCDEFGHIJ...(27)
+    warm-start: |alc_A|=1, |mec_A|=0
+    [IB] distribs_sistema... ok
+    [IB] warm-start aplicado (|alc_A|=1, |mec_A|=0)
+    [SA] refinando... ok  φ=0.322757
+    φ=0.322757  t=540.1s
+  [39/50] fila=44 alc=ABCDEFGHIJ...(24) mec=BCDEFGHIJK...(24)
+    warm-start: |alc_A|=1, |mec_A|=0
+    [IB] distribs_sistema... ok
+    [IB] warm-start aplicado (|alc_A|=1, |mec_A|=0)
+    [SA] refinando... ok  φ=0.028112
+    φ=0.028112  t=284.9s
+  [40/50] fila=45 alc=ABCDEFGHIJ...(25) mec=ABCDEFGHIJ...(24)
+    warm-start: |alc_A|=1, |mec_A|=0
+    [IB] distribs_sistema... ok
+    [IB] warm-start aplicado (|alc_A|=1, |mec_A|=0)
+    [SA] refinando... ok  φ=0.008459
+    φ=0.008459  t=69.6s
+  [41/50] fila=46 alc=BCDEFGHIJK...(24) mec=BCDEFGHIJK...(25)
+    warm-start: |alc_A|=1, |mec_A|=0
+    [IB] distribs_sistema... ok
+    [IB] warm-start aplicado (|alc_A|=1, |mec_A|=0)
+    [SA] refinando... ok  φ=0.237888
+    φ=0.237888  t=629.8s
+  [42/50] fila=47 alc=ABCDEFGHIJ...(26) mec=BCDEFGHIJK...(24)
+    warm-start: |alc_A|=1, |mec_A|=0
+    [IB] distribs_sistema... ok
+    [IB] warm-start aplicado (|alc_A|=1, |mec_A|=0)
+    [SA] refinando... ok  φ=0.028112
+    φ=0.028112  t=583.9s
+  [43/50] fila=48 alc=ABCDEFGHIJ...(24) mec=BCDEFGHIJK...(26)
+    warm-start: |alc_A|=1, |mec_A|=0
+    [IB] distribs_sistema... ok
+    [IB] warm-start aplicado (|alc_A|=1, |mec_A|=0)
+    [SA] refinando... ok  φ=0.043999
+    φ=0.043999  t=500.3s
+  [44/50] fila=49 alc=ABCDEFGHIJ...(25) mec=BCDEFGHIJK...(25)
+    warm-start: |alc_A|=1, |mec_A|=0
+    [IB] distribs_sistema... ok
+    [IB] warm-start aplicado (|alc_A|=1, |mec_A|=0)
+    [SA] refinando... ok  φ=0.01308
+    φ=0.01308  t=61.0s
+  [45/50] fila=50 alc=BCDEFGHIJK...(25) mec=ABCDEFGHIJ...(25)
+    warm-start: |alc_A|=1, |mec_A|=0
+    [IB] distribs_sistema... ok
+    [IB] warm-start aplicado (|alc_A|=1, |mec_A|=0)
+    [SA] refinando... ok  φ=0.086419
+    φ=0.086419  t=66.3s
+  [46/50] fila=51 alc=ABCDEFGHIJ...(26) mec=BCDEFGHIJK...(25)
+    warm-start: |alc_A|=1, |mec_A|=0
+    [IB] distribs_sistema... ok
+    [IB] warm-start aplicado (|alc_A|=1, |mec_A|=0)
+    [SA] refinando... ok  φ=0.01308
+    φ=0.01308  t=473.8s
+  [47/50] fila=52 alc=ABCDEFGHIJ...(25) mec=BCDEFGHIJK...(26)
+    warm-start: |alc_A|=1, |mec_A|=0
+    [IB] distribs_sistema... ok
+    [IB] warm-start aplicado (|alc_A|=1, |mec_A|=0)
+    [SA] refinando... ok  φ=0.043999
+    φ=0.043999  t=61.3s
+  [48/50] fila=53 alc=ABCDEFGHIJ...(27) mec=ABCDEFGHIJ...(25)
+    warm-start: |alc_A|=1, |mec_A|=0
+    [IB] distribs_sistema... ok
+    [IB] warm-start aplicado (|alc_A|=1, |mec_A|=0)
+    [SA] refinando... ok  φ=0.020484
+    φ=0.020484  t=932.6s
+  [49/50] fila=54 alc=BCDEFGHIJK...(25) mec=ABCDEFGHIJ...(27)
+    warm-start: |alc_A|=1, |mec_A|=0
+    [IB] distribs_sistema... ok
+    [IB] warm-start aplicado (|alc_A|=1, |mec_A|=0)
+    [SA] refinando... ok  φ=0.045386
+    φ=0.045386  t=59.1s
+  [50/50] fila=55 alc=ABCDEFGHIJ...(26) mec=BCDEFGHIJK...(26)
+    warm-start: |alc_A|=1, |mec_A|=0
+    [IB] distribs_sistema... ok
+    [IB] warm-start aplicado (|alc_A|=1, |mec_A|=0)
+    [SA] refinando... ok  φ=0.043999
+    φ=0.043999  t=436.3s
+  Activating project at `~/Desktop/AnalisisDiseñoAlgoritmos/Proyecto/ProyectoAnalisis2026/implementacion_julia`
+
+============================================================
+  Finalizados: 50/50  |  Tiempo total: 18377.4s
+============================================================
+  Resultados guardados en: /home/cami/Desktop/AnalisisDiseñoAlgoritmos/Proyecto/ProyectoAnalisis2026/implementacion_julia/resultados_27a.json
+  Para actualizar el Excel: python3 actualizar_excel_27a.py

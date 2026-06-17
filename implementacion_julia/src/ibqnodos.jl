@@ -48,16 +48,16 @@ function state_index_le(estado::Vector{Int8})::Int
 end
 
 # ─── Marginal directo desde TPM ────────────────────────────────────────────────
-# Umbral: para n_free > LOOP_MAX usa collect+mean; si no, loop explícito.
-# LOOP_MAX=20: 2^20=1M iters, más rápido que collect+mean (carga 52MB vs 7GB de mmap).
-const LOOP_MAX = 20
+# Umbral: para n_free > LOOP_MAX usa reducción vectorizada con reshape+mean sin copia extra.
+# LOOP_MAX=22: 2^22=4M iters en loop explícito (~0.02s), evita alocar 536 MB (n=27).
+const LOOP_MAX = 22
 
 """
     marginal_directo(tpm_jl, node, keep_dims, estado, n) -> Float32
 
 Calcula E[tpm[node] | keep_dims fijos, resto libre]. Dos ramas:
 - n_free ≤ LOOP_MAX: itera solo los 2^n_free estados que coinciden (sin copia).
-- n_free > LOOP_MAX: copia columna (268 MB para n=26) y usa media vectorizada.
+- n_free > LOOP_MAX: view + reshape sobre mmap (O(1) RAM extra) y media vectorizada.
 """
 function marginal_directo(
     tpm_jl::AbstractMatrix{Float32},
@@ -98,13 +98,13 @@ function marginal_directo(
         end
         return total * Float32(1.0 / n_states)
     else
-        # Copia a memoria contigua y reduce con SIMD (más rápido que 2^n_free iters)
-        col_contig = copy(view(tpm_jl, node+1, :))     # 268 MB para n=26
-        tensor = reshape(col_contig, ntuple(_ -> 2, n)) # vista (2,)*n column-major
+        # n_free grande (> LOOP_MAX): usamos view + reshape en lugar de copia
+        # para evitar alocar 536 MB (n=27). reshape sobre view es O(1) en RAM.
+        row_view = view(tpm_jl, node+1, :)
+        tensor = reshape(row_view, ntuple(_ -> 2, n))
         keep_set = Set{Int}(keep_dims)
         free_julia_axes = Tuple(d+1 for d in 0:n-1 if d ∉ keep_set)
         reduced = dropdims(mean(tensor; dims=free_julia_axes); dims=free_julia_axes)
-        # Indexar en reduced al estado de keep_dims (Julia axis d+1 = bit d)
         keep_sorted = sort(collect(keep_set))
         idx = Tuple(Int(estado[d+1]) + 1 for d in keep_sorted)
         return reduced[idx...]
