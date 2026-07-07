@@ -27,7 +27,11 @@ const ESTADO     = "1" * "0"^(N - 1)    # "100...0"  (nodo A encendido)
 const CONDICION  = "1"^N                 # sin condicionamiento
 
 const PROJ_DIR  = dirname(abspath(@__FILE__))
-const TPM_PATH  = joinpath(PROJ_DIR, "..", "src", ".samples", "N28A.npy")
+const TPM_PATH  = let
+    p16 = joinpath(PROJ_DIR, "..", "src", ".samples", "N28A_f16.npy")
+    p32 = joinpath(PROJ_DIR, "..", "src", ".samples", "N28A.npy")
+    isfile(p16) ? p16 : p32   # prefiere Float16 (15 GB) sobre Float32 (30 GB)
+end
 const CKPT_PATH = joinpath(PROJ_DIR, "checkpoint_ibqnodos_28a.json")
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -90,11 +94,11 @@ function main()
     inicializar_hoja_resultados()
     casos      = leer_casos()
     ckpt       = cargar_checkpoint()
-    done_filas = Set(c["fila"] for c in get(ckpt, "casos", []) if haskey(c, "phi"))
+    done_filas = Set(c["fila"] for c in get(ckpt, "casos", []) if get(c, "phi", nothing) !== nothing)
 
     seed_cache = Dict{String, Tuple{Set{Int}, Set{Int}}}()
     for c in get(ckpt, "casos", [])
-        if haskey(c, "phi") && haskey(c, "alc_A") && haskey(c, "mec_A")
+        if get(c, "phi", nothing) !== nothing && haskey(c, "alc_A") && haskey(c, "mec_A")
             seed_cache[c["mec_bin"]] = (Set{Int}(c["alc_A"]), Set{Int}(c["mec_A"]))
         end
     end

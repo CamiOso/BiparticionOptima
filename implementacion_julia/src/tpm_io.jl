@@ -30,6 +30,8 @@ function _parse_header(path::String)
             Float32
         elseif dtype_str in ("<f8", "=f8", "|f8")
             Float64
+        elseif dtype_str in ("<f2", "=f2", "|f2")
+            Float16
         else
             error("Dtype no soportado: $dtype_str")
         end

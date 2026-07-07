@@ -23,7 +23,7 @@ const LUT_MEC_MAX        = 27
 const _rmean_data  = Ref{Union{Nothing, Vector{Float32}}}(nothing)
 const _rmean_tpmid = Ref{UInt}(0)
 
-function _get_row_mean(tpm_jl::AbstractMatrix{Float32}, node::Int)::Float32
+function _get_row_mean(tpm_jl::AbstractMatrix{<:AbstractFloat}, node::Int)::Float32
     tid = objectid(tpm_jl)
     if tid != _rmean_tpmid[]
         _rmean_data[]  = fill(NaN32, size(tpm_jl, 1))
@@ -32,7 +32,9 @@ function _get_row_mean(tpm_jl::AbstractMatrix{Float32}, node::Int)::Float32
     cache = _rmean_data[]::Vector{Float32}
     v = cache[node+1]
     if isnan(v)
-        v = Float32(mean(view(tpm_jl, node+1, :)))
+        # mapreduce acumula en Float32 para evitar overflow de Float16 al sumar 2^n elementos
+        row = view(tpm_jl, node+1, :)
+        v   = mapreduce(Float32, +, row) / Float32(length(row))
         cache[node+1] = v
     end
     v
@@ -64,7 +66,7 @@ Calcula E[tpm[node] | keep_dims fijos, resto libre]. Dos ramas:
 - n_free > LOOP_MAX: view + reshape sobre mmap (O(1) RAM extra) y media vectorizada.
 """
 function marginal_directo(
-    tpm_jl::AbstractMatrix{Float32},
+    tpm_jl::AbstractMatrix{<:AbstractFloat},
     node::Int,
     keep_dims::AbstractVector{Int},
     estado::Vector{Int8},
@@ -109,7 +111,10 @@ function marginal_directo(
         tensor = reshape(row_view, ntuple(_ -> 2, n))
         keep_set = Set{Int}(keep_dims)
         free_julia_axes = Tuple(d+1 for d in 0:n-1 if d ∉ keep_set)
-        reduced = dropdims(mean(tensor; dims=free_julia_axes); dims=free_julia_axes)
+        reduced = dropdims(
+            mapreduce(Float32, +, tensor; dims=free_julia_axes) ./ Float32(1 << n_free),
+            dims=free_julia_axes
+        )
         keep_sorted = sort(collect(keep_set))
         idx = Tuple(Int(estado[d+1]) + 1 for d in keep_sorted)
         return reduced[idx...]
@@ -118,7 +123,7 @@ end
 
 # ─── Distribuciones del sistema completo ──────────────────────────────────────
 function distribs_sistema(
-    tpm_jl::AbstractMatrix{Float32},
+    tpm_jl::AbstractMatrix{<:AbstractFloat},
     alc_nodes::Vector{Int},
     mec_nodes::Vector{Int},
     estado::Vector{Int8},
@@ -134,7 +139,7 @@ Para bipartición (alc_A, mec_A):
 - Nodos de alcance en alc_B → marginados sobre mec_A
 """
 function distribs_biparticion(
-    tpm_jl::AbstractMatrix{Float32},
+    tpm_jl::AbstractMatrix{<:AbstractFloat},
     alc_nodes::Vector{Int},
     mec_nodes::Vector{Int},
     alc_A::Set{Int},
@@ -172,7 +177,7 @@ En vez de perfiles de 2^26 = 67M elementos, muestrea N_PROFILE_SAMPLES estados
 aleatorios. Reduce RAM de ~14 GB a ~200 KB para n=26.
 """
 function extraer_perfiles_comprimidos(
-    tpm_jl::AbstractMatrix{Float32},
+    tpm_jl::AbstractMatrix{<:AbstractFloat},
     nodos::Vector{Int};
     n_samples::Int = N_PROFILE_SAMPLES,
     seed::Int = 42
@@ -304,7 +309,7 @@ function _asig_a_biparticion(
 end
 
 function generar_semilla_ib(
-    tpm_jl::AbstractMatrix{Float32},
+    tpm_jl::AbstractMatrix{<:AbstractFloat},
     nodos::Vector{Int},
     alc_nodes::Vector{Int},
     mec_nodes::Vector{Int},
@@ -355,7 +360,7 @@ end
 
 # ─── Simulated Annealing ──────────────────────────────────────────────────────
 function sa_biparticion(
-    tpm_jl::AbstractMatrix{Float32},
+    tpm_jl::AbstractMatrix{<:AbstractFloat},
     alc_nodes::Vector{Int},
     mec_nodes::Vector{Int},
     estado::Vector{Int8},
@@ -457,7 +462,7 @@ todos los nodos libres (no-mec). Usa lectura secuencial de cada fila → rápido
 incluso con TPM de 30 GB en disco. compact indexa por bit_k = mec_sorted[k].
 """
 function precompute_lut(
-    tpm_jl   ::AbstractMatrix{Float32},
+    tpm_jl   ::AbstractMatrix{<:AbstractFloat},
     alc_nodes::Vector{Int},
     mec_nodes::Vector{Int},
     n        ::Int
@@ -467,15 +472,31 @@ function precompute_lut(
     n_alc           = length(alc_nodes)
     mec_set         = Set(mec_sorted)
     free_julia_axes = Tuple(d + 1 for d in 0:n-1 if d ∉ mec_set)
-    lut             = Matrix{Float16}(undef, n_alc, 1 << n_mec)
-    # Cada nodo es independiente: Threads.@threads da hasta nthreads()x speedup.
-    # El mmap tpm_jl es read-only y lut[i,:] escribe en filas distintas → sin race condition.
-    Threads.@threads for i in eachindex(alc_nodes)
-        node     = alc_nodes[i]
-        row_view = view(tpm_jl, node + 1, :)
-        tensor   = reshape(row_view, ntuple(_ -> 2, n))
-        reduced  = dropdims(mean(tensor; dims = free_julia_axes); dims = free_julia_axes)
-        lut[i, :] .= Float16.(vec(reduced))
+    # Forzar GC antes de LUTs grandes para evitar que basura acumulada cause OOM.
+    n_mec >= 20 && GC.gc(true)
+    lut       = Matrix{Float16}(undef, n_alc, 1 << n_mec)
+    # Throttle de concurrencia: cada thread asigna ≈10×(1<<n_mec) bytes
+    # (acumulador Float64 de mean + vec Float16). Presupuesto 2 GB para temporales.
+    # Ejemplo: n_mec=26 → 640 MB/thread → max 3 threads; n_mec=14 → 163 KB → 4 threads.
+    max_conc = max(1, min(Threads.nthreads(), 2_000_000_000 ÷ (10 * (1 << n_mec))))
+    sem      = Base.Semaphore(max_conc)
+    @sync for i in eachindex(alc_nodes)
+        Threads.@spawn begin
+            Base.acquire(sem)
+            try
+                node     = alc_nodes[i]
+                row_view = view(tpm_jl, node + 1, :)
+                tensor   = reshape(row_view, ntuple(_ -> 2, n))
+                n_free_lut = n - n_mec
+                reduced  = dropdims(
+                    mapreduce(Float32, +, tensor; dims = free_julia_axes) ./ Float32(1 << n_free_lut),
+                    dims = free_julia_axes
+                )
+                lut[i, :] .= Float16.(vec(reduced))
+            finally
+                Base.release(sem)
+            end
+        end
     end
     lut, mec_sorted
 end
@@ -638,7 +659,7 @@ Corre IBQNodos sobre un caso. Retorna phi (Float32), string de partición,
 y los sets de la bipartición (para warm-start del siguiente caso).
 """
 function ibqnodos_caso(
-    tpm_jl::AbstractMatrix{Float32},
+    tpm_jl::AbstractMatrix{<:AbstractFloat},
     alc_str::String,
     mec_str::String,
     estado_str::String;
@@ -705,7 +726,7 @@ function ibqnodos_caso(
         ]
         cands = [(sa, sm, phi_biparticion(tpm_jl, alc_nodes, mec_nodes, sa, sm, estado, n, dists_sys))
                  for (sa, sm, _) in cands]
-        best_alc_A, best_mec_A, phi = cands[argmin(x -> x[3], cands)]
+        best_alc_A, best_mec_A, phi = argmin(x -> x[3], cands)
         verbose && println("    φ=$(round(Float64(phi), digits=6)) (sin SA)"); flush(stdout)
     end
 
