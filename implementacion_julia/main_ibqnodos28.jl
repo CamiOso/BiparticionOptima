@@ -1,15 +1,15 @@
 """
-IBQNodos para n=27 en Julia — versión memory-efficient.
+IBQNodos para n=28 en Julia — versión memory-efficient.
 
 Ventajas vs Python:
-  • La TPM de 14.5 GB se memory-mapea (sin copia en RAM)
-  • Los perfiles IB usan 2048 muestras en vez de 134M → sin OOM
+  • La TPM de ~30 GB se memory-mapea (sin copia en RAM)
+  • Los perfiles IB usan 2048 muestras en vez de 268M → sin OOM
   • marginal_directo suma solo 2^(n_free) estados, no materializa tensores
 
 Uso:
-    julia -t auto --project=. main_ibqnodos27.jl            # usa todos los cores (recomendado)
-    julia -t auto --project=. main_ibqnodos27.jl --desde 5  # retomar desde caso 5
-    julia --project=. main_ibqnodos27.jl                     # 1 thread (sin paralelismo LUT)
+    julia -t auto --project=. main_ibqnodos28.jl            # usa todos los cores (recomendado)
+    julia -t auto --project=. main_ibqnodos28.jl --desde 5  # retomar desde caso 5
+    julia --project=. main_ibqnodos28.jl                     # 1 thread (sin paralelismo LUT)
 """
 
 using Pkg
@@ -21,14 +21,14 @@ using .TpmIO, .IBQNodos
 using JSON3, Dates
 
 # ─── Configuración ────────────────────────────────────────────────────────────
-const N          = 27
-const SISTEMA    = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0"   # 26 letras + '0' para nodo 27
+const N          = 28
+const SISTEMA    = "ABCDEFGHIJKLMNOPQRSTUVWXYZ01"   # 26 letras + '0' + '1'
 const ESTADO     = "1" * "0"^(N - 1)    # "100...0"  (nodo A encendido)
 const CONDICION  = "1"^N                 # sin condicionamiento
 
 const PROJ_DIR  = dirname(abspath(@__FILE__))
-const TPM_PATH  = joinpath(PROJ_DIR, "..", "src", ".samples", "N27A.npy")
-const CKPT_PATH = joinpath(PROJ_DIR, "checkpoint_ibqnodos_27a.json")
+const TPM_PATH  = joinpath(PROJ_DIR, "..", "src", ".samples", "N28A.npy")
+const CKPT_PATH = joinpath(PROJ_DIR, "checkpoint_ibqnodos_28a.json")
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 function to_mask(letters::AbstractString)::String
@@ -46,10 +46,10 @@ function guardar_checkpoint(data::Dict)
 end
 
 # ─── Leer casos desde JSON ────────────────────────────────────────────────────
-const CASOS_JSON = joinpath(PROJ_DIR, "casos_27a.json")
+const CASOS_JSON = joinpath(PROJ_DIR, "casos_28a.json")
 
 function leer_casos()::Vector{Dict}
-    isfile(CASOS_JSON) || error("No se encontró $CASOS_JSON.\nGenerarlo con: python3 scripts/extraer_casos_27a.py")
+    isfile(CASOS_JSON) || error("No se encontró $CASOS_JSON.\nGenerarlo con: python3 implementacion_julia/extraer_casos_28a.py")
     raw = JSON3.read(read(CASOS_JSON, String), Vector)
     [Dict(
         "fila"    => Int(c["prueba"]) + 5,
@@ -61,7 +61,7 @@ function leer_casos()::Vector{Dict}
 end
 
 function inicializar_hoja_resultados()
-    println("  [INFO] Resultados → checkpoint JSON + resultados_27a.json")
+    println("  [INFO] Resultados → checkpoint JSON + resultados_28a.json")
 end
 
 function escribir_resultado(fila::Int, prueba::Int, alc_str::String, mec_str::String,
@@ -78,7 +78,7 @@ function main()
     end
 
     tpm_path = abspath(TPM_PATH)
-    isfile(tpm_path) || error("TPM no encontrada: $tpm_path\nEjecuta primero: python scripts/generar_N27A.py")
+    isfile(tpm_path) || error("TPM no encontrada: $tpm_path\nEjecuta primero: python scripts/generar_N28A.py")
 
     sz_gb = filesize(tpm_path) / 1e9
     println("Cargando TPM $(basename(tpm_path)) ($(round(sz_gb, digits=2)) GB)..."); flush(stdout)
@@ -102,7 +102,7 @@ function main()
     resultados = copy(get(ckpt, "casos", []))
 
     println("\n$("="^60)")
-    println("  27A Julia: $(length(casos)) casos | completados: $(length(done_filas))")
+    println("  28A Julia: $(length(casos)) casos | completados: $(length(done_filas))")
     println("$("="^60)\n")
 
     t_total = time()
@@ -171,10 +171,10 @@ function main()
     println("  Finalizados: $completados/$(length(casos))  |  Tiempo total: $(t_fin)s")
     println("$("="^60)")
 
-    res_path = joinpath(PROJ_DIR, "resultados_27a.json")
+    res_path = joinpath(PROJ_DIR, "resultados_28a.json")
     write(res_path, JSON3.write(Dict("casos" => resultados)))
     println("  Resultados guardados en: $res_path")
-    println("  Para actualizar el Excel: python3 actualizar_excel_27a.py")
+    println("  Para actualizar el Excel: python3 actualizar_excel_28a.py")
 end
 
 main()

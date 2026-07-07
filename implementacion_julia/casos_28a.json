@@ -1,0 +1,252 @@
+[
+  {
+    "prueba": 41,
+    "alc": "ACEGIKMOQSUWY0",
+    "mec": "ACEGIKMOQSUWY0"
+  },
+  {
+    "prueba": 42,
+    "alc": "ACEGIKMOQSUWY0",
+    "mec": "BDFHJLNPRTVXZ1"
+  },
+  {
+    "prueba": 48,
+    "alc": "BDFHJLNPRTVXZ1",
+    "mec": "ACEGIKMOQSUWY0"
+  },
+  {
+    "prueba": 49,
+    "alc": "BDFHJLNPRTVXZ1",
+    "mec": "BDFHJLNPRTVXZ1"
+  },
+  {
+    "prueba": 34,
+    "alc": "ABDEGHJKMNPQSTVWYZ1",
+    "mec": "ACEGIKMOQSUWY0"
+  },
+  {
+    "prueba": 35,
+    "alc": "ABDEGHJKMNPQSTVWYZ1",
+    "mec": "BDFHJLNPRTVXZ1"
+  },
+  {
+    "prueba": 40,
+    "alc": "ACEGIKMOQSUWY0",
+    "mec": "ABDEGHJKMNPQSTVWYZ1"
+  },
+  {
+    "prueba": 47,
+    "alc": "BDFHJLNPRTVXZ1",
+    "mec": "ABDEGHJKMNPQSTVWYZ1"
+  },
+  {
+    "prueba": 33,
+    "alc": "ABDEGHJKMNPQSTVWYZ1",
+    "mec": "ABDEGHJKMNPQSTVWYZ1"
+  },
+  {
+    "prueba": 27,
+    "alc": "BCDEFGHIJKLMNOPQRSTUVWXYZ0",
+    "mec": "ACEGIKMOQSUWY0"
+  },
+  {
+    "prueba": 28,
+    "alc": "BCDEFGHIJKLMNOPQRSTUVWXYZ0",
+    "mec": "BDFHJLNPRTVXZ1"
+  },
+  {
+    "prueba": 39,
+    "alc": "ACEGIKMOQSUWY0",
+    "mec": "BCDEFGHIJKLMNOPQRSTUVWXYZ0"
+  },
+  {
+    "prueba": 46,
+    "alc": "BDFHJLNPRTVXZ1",
+    "mec": "BCDEFGHIJKLMNOPQRSTUVWXYZ0"
+  },
+  {
+    "prueba": 13,
+    "alc": "ABCDEFGHIJKLMNOPQRSTUVWXYZ0",
+    "mec": "ACEGIKMOQSUWY0"
+  },
+  {
+    "prueba": 14,
+    "alc": "ABCDEFGHIJKLMNOPQRSTUVWXYZ0",
+    "mec": "BDFHJLNPRTVXZ1"
+  },
+  {
+    "prueba": 20,
+    "alc": "BCDEFGHIJKLMNOPQRSTUVWXYZ01",
+    "mec": "ACEGIKMOQSUWY0"
+  },
+  {
+    "prueba": 21,
+    "alc": "BCDEFGHIJKLMNOPQRSTUVWXYZ01",
+    "mec": "BDFHJLNPRTVXZ1"
+  },
+  {
+    "prueba": 37,
+    "alc": "ACEGIKMOQSUWY0",
+    "mec": "ABCDEFGHIJKLMNOPQRSTUVWXYZ0"
+  },
+  {
+    "prueba": 38,
+    "alc": "ACEGIKMOQSUWY0",
+    "mec": "BCDEFGHIJKLMNOPQRSTUVWXYZ01"
+  },
+  {
+    "prueba": 44,
+    "alc": "BDFHJLNPRTVXZ1",
+    "mec": "ABCDEFGHIJKLMNOPQRSTUVWXYZ0"
+  },
+  {
+    "prueba": 45,
+    "alc": "BDFHJLNPRTVXZ1",
+    "mec": "BCDEFGHIJKLMNOPQRSTUVWXYZ01"
+  },
+  {
+    "prueba": 6,
+    "alc": "ABCDEFGHIJKLMNOPQRSTUVWXYZ01",
+    "mec": "ACEGIKMOQSUWY0"
+  },
+  {
+    "prueba": 7,
+    "alc": "ABCDEFGHIJKLMNOPQRSTUVWXYZ01",
+    "mec": "BDFHJLNPRTVXZ1"
+  },
+  {
+    "prueba": 36,
+    "alc": "ACEGIKMOQSUWY0",
+    "mec": "ABCDEFGHIJKLMNOPQRSTUVWXYZ01"
+  },
+  {
+    "prueba": 43,
+    "alc": "BDFHJLNPRTVXZ1",
+    "mec": "ABCDEFGHIJKLMNOPQRSTUVWXYZ01"
+  },
+  {
+    "prueba": 26,
+    "alc": "BCDEFGHIJKLMNOPQRSTUVWXYZ0",
+    "mec": "ABDEGHJKMNPQSTVWYZ1"
+  },
+  {
+    "prueba": 32,
+    "alc": "ABDEGHJKMNPQSTVWYZ1",
+    "mec": "BCDEFGHIJKLMNOPQRSTUVWXYZ0"
+  },
+  {
+    "prueba": 12,
+    "alc": "ABCDEFGHIJKLMNOPQRSTUVWXYZ0",
+    "mec": "ABDEGHJKMNPQSTVWYZ1"
+  },
+  {
+    "prueba": 19,
+    "alc": "BCDEFGHIJKLMNOPQRSTUVWXYZ01",
+    "mec": "ABDEGHJKMNPQSTVWYZ1"
+  },
+  {
+    "prueba": 30,
+    "alc": "ABDEGHJKMNPQSTVWYZ1",
+    "mec": "ABCDEFGHIJKLMNOPQRSTUVWXYZ0"
+  },
+  {
+    "prueba": 31,
+    "alc": "ABDEGHJKMNPQSTVWYZ1",
+    "mec": "BCDEFGHIJKLMNOPQRSTUVWXYZ01"
+  },
+  {
+    "prueba": 5,
+    "alc": "ABCDEFGHIJKLMNOPQRSTUVWXYZ01",
+    "mec": "ABDEGHJKMNPQSTVWYZ1"
+  },
+  {
+    "prueba": 29,
+    "alc": "ABDEGHJKMNPQSTVWYZ1",
+    "mec": "ABCDEFGHIJKLMNOPQRSTUVWXYZ01"
+  },
+  {
+    "prueba": 50,
+    "alc": "ACDEFGHIJKLMNOPQRSTVXZ01",
+    "mec": "ACDEFGHIJKLMNOPQRSTVXZ01"
+  },
+  {
+    "prueba": 25,
+    "alc": "BCDEFGHIJKLMNOPQRSTUVWXYZ0",
+    "mec": "BCDEFGHIJKLMNOPQRSTUVWXYZ0"
+  },
+  {
+    "prueba": 11,
+    "alc": "ABCDEFGHIJKLMNOPQRSTUVWXYZ0",
+    "mec": "BCDEFGHIJKLMNOPQRSTUVWXYZ0"
+  },
+  {
+    "prueba": 18,
+    "alc": "BCDEFGHIJKLMNOPQRSTUVWXYZ01",
+    "mec": "BCDEFGHIJKLMNOPQRSTUVWXYZ0"
+  },
+  {
+    "prueba": 23,
+    "alc": "BCDEFGHIJKLMNOPQRSTUVWXYZ0",
+    "mec": "ABCDEFGHIJKLMNOPQRSTUVWXYZ0"
+  },
+  {
+    "prueba": 24,
+    "alc": "BCDEFGHIJKLMNOPQRSTUVWXYZ0",
+    "mec": "BCDEFGHIJKLMNOPQRSTUVWXYZ01"
+  },
+  {
+    "prueba": 4,
+    "alc": "ABCDEFGHIJKLMNOPQRSTUVWXYZ01",
+    "mec": "BCDEFGHIJKLMNOPQRSTUVWXYZ0"
+  },
+  {
+    "prueba": 22,
+    "alc": "BCDEFGHIJKLMNOPQRSTUVWXYZ0",
+    "mec": "ABCDEFGHIJKLMNOPQRSTUVWXYZ01"
+  },
+  {
+    "prueba": 9,
+    "alc": "ABCDEFGHIJKLMNOPQRSTUVWXYZ0",
+    "mec": "ABCDEFGHIJKLMNOPQRSTUVWXYZ0"
+  },
+  {
+    "prueba": 10,
+    "alc": "ABCDEFGHIJKLMNOPQRSTUVWXYZ0",
+    "mec": "BCDEFGHIJKLMNOPQRSTUVWXYZ01"
+  },
+  {
+    "prueba": 16,
+    "alc": "BCDEFGHIJKLMNOPQRSTUVWXYZ01",
+    "mec": "ABCDEFGHIJKLMNOPQRSTUVWXYZ0"
+  },
+  {
+    "prueba": 17,
+    "alc": "BCDEFGHIJKLMNOPQRSTUVWXYZ01",
+    "mec": "BCDEFGHIJKLMNOPQRSTUVWXYZ01"
+  },
+  {
+    "prueba": 2,
+    "alc": "ABCDEFGHIJKLMNOPQRSTUVWXYZ01",
+    "mec": "ABCDEFGHIJKLMNOPQRSTUVWXYZ0"
+  },
+  {
+    "prueba": 3,
+    "alc": "ABCDEFGHIJKLMNOPQRSTUVWXYZ01",
+    "mec": "BCDEFGHIJKLMNOPQRSTUVWXYZ01"
+  },
+  {
+    "prueba": 8,
+    "alc": "ABCDEFGHIJKLMNOPQRSTUVWXYZ0",
+    "mec": "ABCDEFGHIJKLMNOPQRSTUVWXYZ01"
+  },
+  {
+    "prueba": 15,
+    "alc": "BCDEFGHIJKLMNOPQRSTUVWXYZ01",
+    "mec": "ABCDEFGHIJKLMNOPQRSTUVWXYZ01"
+  },
+  {
+    "prueba": 1,
+    "alc": "ABCDEFGHIJKLMNOPQRSTUVWXYZ01",
+    "mec": "ABCDEFGHIJKLMNOPQRSTUVWXYZ01"
+  }
+]

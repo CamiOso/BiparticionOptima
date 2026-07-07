@@ -13,6 +13,10 @@ const TEMP_INICIAL       = 1f0
 const TEMP_FINAL         = 1f-3
 const FACTOR_ENFRIAM     = 0.92f0
 const PASOS_POR_TEMP     = 30
+# Para n_mec <= LUT_MEC_MAX se pre-calcula tabla de marginals en Float16 (lectura
+# secuencial), el SA opera en RAM. Para n_mec=28 la LUT sería >15 GB: solo semillas
+# degeneradas. Float16 cubre n_mec=27 con max 7.5 GB; exacto para 43/50 casos.
+const LUT_MEC_MAX        = 27
 
 # ─── Cache de medias de fila (n_keep=0, mec_A={}) ─────────────────────────────
 # Computed once per node on first use; avoids re-reading 7GB mmap each SA step.
@@ -88,11 +92,12 @@ function marginal_directo(
         base = 0
         for d in keep_dims; base |= (Int(estado[d+1]) << d); end
         n_states = 1 << n_free
-        total = 0f0
+        nfd      = length(free_dims)
+        total    = 0f0
         @inbounds for x in 0:n_states-1
             s = base
-            for (k, d) in enumerate(free_dims)
-                s |= (((x >> (k-1)) & 1) << d)
+            @inbounds for k in 1:nfd
+                s |= (((x >> (k-1)) & 1) << free_dims[k])
             end
             total += tpm_jl[node+1, s+1]
         end
@@ -141,7 +146,7 @@ function distribs_biparticion(
     mec_B_list = sort([m for m in mec_nodes if m ∉ mec_A])
 
     result = Vector{Float32}(undef, length(alc_nodes))
-    for (i, node) in enumerate(alc_nodes)
+    @inbounds for (i, node) in enumerate(alc_nodes)
         if node ∈ alc_A
             result[i] = marginal_directo(tpm_jl, node, mec_A_list, estado, n)
         else
@@ -179,8 +184,8 @@ function extraer_perfiles_comprimidos(
     n_nodos  = length(nodos)
     perfiles = Matrix{Float32}(undef, n_nodos, n_samples)
 
-    for (i, node) in enumerate(nodos)
-        for (j, idx) in enumerate(sample_idxs)
+    @inbounds for (i, node) in enumerate(nodos)
+        @inbounds for (j, idx) in enumerate(sample_idxs)
             perfiles[i, j] = tpm_jl[node+1, idx]
         end
         s = sum(perfiles[i, :])
@@ -445,6 +450,176 @@ function sa_biparticion(
     mejor_alc_A, mejor_mec_A, mejor_perdida
 end
 
+# ─── LUT (Lookup Table) para n_mec ≤ LUT_MEC_MAX ──────────────────────────────
+"""
+lut[i, compact+1] = P(alc_nodes[i]=1 | mec_state=compact), promediando sobre
+todos los nodos libres (no-mec). Usa lectura secuencial de cada fila → rápido
+incluso con TPM de 30 GB en disco. compact indexa por bit_k = mec_sorted[k].
+"""
+function precompute_lut(
+    tpm_jl   ::AbstractMatrix{Float32},
+    alc_nodes::Vector{Int},
+    mec_nodes::Vector{Int},
+    n        ::Int
+)::Tuple{Matrix{Float16}, Vector{Int}}
+    mec_sorted      = sort(mec_nodes)
+    n_mec           = length(mec_sorted)
+    n_alc           = length(alc_nodes)
+    mec_set         = Set(mec_sorted)
+    free_julia_axes = Tuple(d + 1 for d in 0:n-1 if d ∉ mec_set)
+    lut             = Matrix{Float16}(undef, n_alc, 1 << n_mec)
+    # Cada nodo es independiente: Threads.@threads da hasta nthreads()x speedup.
+    # El mmap tpm_jl es read-only y lut[i,:] escribe en filas distintas → sin race condition.
+    Threads.@threads for i in eachindex(alc_nodes)
+        node     = alc_nodes[i]
+        row_view = view(tpm_jl, node + 1, :)
+        tensor   = reshape(row_view, ntuple(_ -> 2, n))
+        reduced  = dropdims(mean(tensor; dims = free_julia_axes); dims = free_julia_axes)
+        lut[i, :] .= Float16.(vec(reduced))
+    end
+    lut, mec_sorted
+end
+
+function marginal_from_lut(
+    lut       ::Matrix{Float16},
+    mec_sorted::Vector{Int},
+    node_idx  ::Int,
+    keep_dims ::AbstractVector{Int},
+    estado    ::Vector{Int8}
+)::Float32
+    n_mec    = length(mec_sorted)
+    keep_set = Set(keep_dims)
+    mec_A_pos = Int[p for p in 1:n_mec if mec_sorted[p] ∈ keep_set]
+    mec_B_pos = Int[p for p in 1:n_mec if mec_sorted[p] ∉ keep_set]
+    base = 0
+    for pos in mec_A_pos
+        base |= Int(estado[mec_sorted[pos] + 1]) << (pos - 1)
+    end
+    n_mec_B = length(mec_B_pos)
+    total   = 0f0
+    @inbounds for b in 0:(1 << n_mec_B) - 1
+        compact = base
+        for (i, pos) in enumerate(mec_B_pos)
+            compact |= ((b >> (i - 1)) & 1) << (pos - 1)
+        end
+        total += Float32(lut[node_idx, compact + 1])   # Float16→Float32 al acumular
+    end
+    total / Float32(1 << n_mec_B)
+end
+
+function distribs_biparticion_lut(
+    lut       ::Matrix{Float16},
+    mec_sorted::Vector{Int},
+    alc_nodes ::Vector{Int},
+    alc_A     ::Set{Int},
+    mec_A     ::Set{Int},
+    estado    ::Vector{Int8}
+)::Vector{Float32}
+    mec_A_list = sort(collect(mec_A))
+    mec_B_list = Int[m for m in mec_sorted if m ∉ mec_A]
+    result     = Vector{Float32}(undef, length(alc_nodes))
+    @inbounds for (i, node) in enumerate(alc_nodes)
+        keep       = node ∈ alc_A ? mec_A_list : mec_B_list
+        result[i]  = marginal_from_lut(lut, mec_sorted, i, keep, estado)
+    end
+    result
+end
+
+function phi_biparticion_lut(
+    lut       ::Matrix{Float16},
+    mec_sorted::Vector{Int},
+    alc_nodes ::Vector{Int},
+    alc_A     ::Set{Int},
+    mec_A     ::Set{Int},
+    dists_sys ::Vector{Float32},
+    estado    ::Vector{Int8}
+)::Float32
+    dp = distribs_biparticion_lut(lut, mec_sorted, alc_nodes, alc_A, mec_A, estado)
+    emd_efecto(dp, dists_sys)
+end
+
+function generar_semilla_lut(
+    lut       ::Matrix{Float16},
+    mec_sorted::Vector{Int},
+    alc_nodes ::Vector{Int},
+    mec_nodes ::Vector{Int},
+    estado    ::Vector{Int8},
+    dists_sys ::Vector{Float32};
+    n_restarts::Int = N_RESTARTS_IB
+)::Tuple{Set{Int}, Set{Int}}
+    alc_list = sort(alc_nodes)
+    mec_list = sort(mec_nodes)
+    best_alc_A = Set(alc_list[1:length(alc_list) ÷ 2])
+    best_mec_A = Set(mec_list[1:length(mec_list) ÷ 2])
+    best_phi   = phi_biparticion_lut(lut, mec_sorted, alc_nodes, best_alc_A, best_mec_A, dists_sys, estado)
+    d_alc = Set([first(alc_list)]); d_mec = Set{Int}()
+    d_phi = phi_biparticion_lut(lut, mec_sorted, alc_nodes, d_alc, d_mec, dists_sys, estado)
+    if d_phi < best_phi; best_phi = d_phi; best_alc_A = d_alc; best_mec_A = d_mec; end
+    rng = MersenneTwister(42)
+    for _ in 0:n_restarts-1
+        r_alc = Set(shuffle(rng, alc_list)[1:length(alc_list) ÷ 2])
+        r_mec = Set(shuffle(rng, mec_list)[1:length(mec_list) ÷ 2])
+        r_phi = phi_biparticion_lut(lut, mec_sorted, alc_nodes, r_alc, r_mec, dists_sys, estado)
+        if r_phi < best_phi; best_phi = r_phi; best_alc_A = r_alc; best_mec_A = r_mec; end
+    end
+    best_alc_A, best_mec_A
+end
+
+function sa_biparticion_lut(
+    lut       ::Matrix{Float16},
+    mec_sorted::Vector{Int},
+    alc_nodes ::Vector{Int},
+    mec_nodes ::Vector{Int},
+    estado    ::Vector{Int8},
+    dists_sys ::Vector{Float32},
+    alc_A_init::Set{Int},
+    mec_A_init::Set{Int};
+    temp_inicial  ::Float32 = TEMP_INICIAL,
+    temp_final    ::Float32 = TEMP_FINAL,
+    factor_enfriam::Float32 = FACTOR_ENFRIAM,
+    seed          ::Int     = 42
+)::Tuple{Set{Int}, Set{Int}, Float32}
+    alc_nodes_set = Set(alc_nodes)
+    mec_nodes_set = Set(mec_nodes)
+    alc_A = copy(alc_A_init); mec_A = copy(mec_A_init)
+    actual = phi_biparticion_lut(lut, mec_sorted, alc_nodes, alc_A, mec_A, dists_sys, estado)
+    mejor  = actual; mejor_alc_A = copy(alc_A); mejor_mec_A = copy(mec_A)
+    mejor <= 1f-12 && return mejor_alc_A, mejor_mec_A, mejor
+    rng         = MersenneTwister(seed + length(alc_nodes))
+    total_verts = length(mec_nodes) + length(alc_nodes)
+    pasos       = 5; temp = temp_inicial; mejor_previa = mejor; min_mejora = 1f-4; niveles_sin = 0
+    while temp > temp_final
+        for _ in 1:pasos
+            v_idx = rand(rng, 1:total_verts)
+            new_alc_A = copy(alc_A); new_mec_A = copy(mec_A)
+            if v_idx <= length(mec_nodes)
+                node = mec_nodes[v_idx]
+                node ∈ mec_A ? delete!(new_mec_A, node) : push!(new_mec_A, node)
+            else
+                node = alc_nodes[v_idx - length(mec_nodes)]
+                node ∈ alc_A ? delete!(new_alc_A, node) : push!(new_alc_A, node)
+            end
+            (isempty(new_alc_A) && isempty(new_mec_A)) && continue
+            (new_alc_A == alc_nodes_set && new_mec_A == mec_nodes_set) && continue
+            new_phi = phi_biparticion_lut(lut, mec_sorted, alc_nodes, new_alc_A, new_mec_A, dists_sys, estado)
+            delta   = new_phi - actual
+            if delta < 0 || rand(rng, Float32) < exp(-delta / temp)
+                alc_A = new_alc_A; mec_A = new_mec_A; actual = new_phi
+                if actual < mejor; mejor = actual; mejor_alc_A = copy(alc_A); mejor_mec_A = copy(mec_A); end
+            end
+        end
+        temp *= factor_enfriam
+        mejor <= 1f-12 && break
+        if mejor < mejor_previa - min_mejora
+            mejor_previa = mejor; niveles_sin = 0
+        else
+            niveles_sin += 1
+            if niveles_sin >= 5 && temp < temp_inicial * 0.5f0; break; end
+        end
+    end
+    mejor_alc_A, mejor_mec_A, mejor
+end
+
 # ─── Formateo de partición ─────────────────────────────────────────────────────
 function fmt_biparticion(alc_A, mec_A, alc_nodes, mec_nodes)::String
     mec_A_s = sort(collect(mec_A))
@@ -487,42 +662,52 @@ function ibqnodos_caso(
     dists_sys = distribs_sistema(tpm_jl, alc_nodes, mec_nodes, estado, n)
     verbose && (println(" ok"); flush(stdout))
 
-    # 2. Semilla IB
-    if warm_alc_A !== nothing && warm_mec_A !== nothing
-        # Warm-start: filtrar al conjunto de vértices actual
-        # mec_A puede quedar vacío: la partición (mec_A={}) es válida y frecuentemente óptima
-        alc_A_init = Set(v for v in warm_alc_A if v ∈ alc_nodes)
-        mec_A_init = Set(v for v in warm_mec_A if v ∈ mec_nodes)
-        if isempty(alc_A_init)
-            alc_A_init = Set([first(alc_nodes)])
-        end
-        # Evaluar además el candidato degenerado (mec_A={}) y quedarse con el mejor
-        alc_list_ws = sort(collect(alc_nodes))
-        degen_alc_ws = Set([first(alc_list_ws)])
-        degen_mec_ws = Set{Int}()
-        phi_ws   = phi_biparticion(tpm_jl, alc_nodes, mec_nodes, alc_A_init, mec_A_init, estado, n, dists_sys)
-        phi_degen = phi_biparticion(tpm_jl, alc_nodes, mec_nodes, degen_alc_ws, degen_mec_ws, estado, n, dists_sys)
-        if phi_degen < phi_ws
-            alc_A_init = degen_alc_ws
-            mec_A_init = degen_mec_ws
-        end
-        verbose && println("    [IB] warm-start aplicado (|alc_A|=$(length(alc_A_init)), |mec_A|=$(length(mec_A_init)))")
-    else
-        verbose && print("    [IB] generando semilla...")
-        nodos = sort(unique(vcat(alc_nodes, mec_nodes)))
-        alc_A_init, mec_A_init = generar_semilla_ib(
-            tpm_jl, nodos, alc_nodes, mec_nodes, estado, n, dists_sys
-        )
-        verbose && println(" ok  φ_seed=$(round(phi_biparticion(tpm_jl, alc_nodes, mec_nodes, alc_A_init, mec_A_init, estado, n, dists_sys), digits=4))")
-    end
+    # 2. Semilla + 3. SA — rama LUT (secuencial, SA en RAM) o FAST (solo degeneradas)
+    n_mec = length(mec_nodes)
 
-    # 3. SA refinamiento
-    verbose && print("    [SA] refinando...")
-    best_alc_A, best_mec_A, phi = sa_biparticion(
-        tpm_jl, alc_nodes, mec_nodes, estado, n, dists_sys,
-        alc_A_init, mec_A_init
-    )
-    verbose && println(" ok  φ=$(round(phi, digits=6))")
+    if n_mec <= LUT_MEC_MAX
+        # ── LUT: una lectura secuencial por nodo → SA en RAM ─────────────────
+        nt = Threads.nthreads()
+        verbose && print("    [LUT] precalculando ($n_mec nodos, $(1 << n_mec) estados, $(nt) thread$(nt>1 ? "s" : ""))..."); flush(stdout)
+        t_lut = @elapsed lut, mec_sorted = precompute_lut(tpm_jl, alc_nodes, mec_nodes, n)
+        verbose && println(" ok ($(round(t_lut, digits=1))s)"); flush(stdout)
+
+        if warm_alc_A !== nothing && warm_mec_A !== nothing
+            alc_A_init = Set(v for v in warm_alc_A if v ∈ alc_nodes)
+            mec_A_init = Set(v for v in warm_mec_A if v ∈ mec_nodes)
+            isempty(alc_A_init) && (alc_A_init = Set([first(alc_nodes)]))
+            alc_list_ws = sort(collect(alc_nodes))
+            d_alc = Set([first(alc_list_ws)]); d_mec = Set{Int}()
+            phi_ws    = phi_biparticion_lut(lut, mec_sorted, alc_nodes, alc_A_init, mec_A_init, dists_sys, estado)
+            phi_degen = phi_biparticion_lut(lut, mec_sorted, alc_nodes, d_alc, d_mec, dists_sys, estado)
+            if phi_degen < phi_ws; alc_A_init = d_alc; mec_A_init = d_mec; end
+            verbose && println("    [IB-LUT] warm-start (|alc_A|=$(length(alc_A_init)), |mec_A|=$(length(mec_A_init)))")
+        else
+            verbose && print("    [IB-LUT] generando semilla..."); flush(stdout)
+            alc_A_init, mec_A_init = generar_semilla_lut(lut, mec_sorted, alc_nodes, mec_nodes, estado, dists_sys)
+            phi_seed = phi_biparticion_lut(lut, mec_sorted, alc_nodes, alc_A_init, mec_A_init, dists_sys, estado)
+            verbose && println(" ok  φ_seed=$(round(Float64(phi_seed), digits=4))"); flush(stdout)
+        end
+
+        verbose && print("    [SA-LUT] refinando..."); flush(stdout)
+        best_alc_A, best_mec_A, phi = sa_biparticion_lut(
+            lut, mec_sorted, alc_nodes, mec_nodes, estado, dists_sys, alc_A_init, mec_A_init
+        )
+        verbose && println(" ok  φ=$(round(Float64(phi), digits=6))"); flush(stdout)
+    else
+        # ── FAST: n_mec > LUT_MEC_MAX → solo semillas degeneradas, sin SA ────
+        verbose && println("    [FAST] n_mec=$n_mec>$LUT_MEC_MAX — semillas degeneradas, sin SA"); flush(stdout)
+        alc_list = sort(alc_nodes); mec_list = sort(mec_nodes)
+        cands = Tuple{Set{Int}, Set{Int}, Float32}[
+            (Set([first(alc_list)]),                 Set{Int}(),        0f0),
+            (Set(alc_list[1:length(alc_list) ÷ 2]), Set(mec_list),     0f0),
+            (Set(alc_list[1:length(alc_list) ÷ 2]), Set{Int}(),        0f0),
+        ]
+        cands = [(sa, sm, phi_biparticion(tpm_jl, alc_nodes, mec_nodes, sa, sm, estado, n, dists_sys))
+                 for (sa, sm, _) in cands]
+        best_alc_A, best_mec_A, phi = cands[argmin(x -> x[3], cands)]
+        verbose && println("    φ=$(round(Float64(phi), digits=6)) (sin SA)"); flush(stdout)
+    end
 
     particion = fmt_biparticion(best_alc_A, best_mec_A, alc_nodes, mec_nodes)
     phi, particion, best_alc_A, best_mec_A
